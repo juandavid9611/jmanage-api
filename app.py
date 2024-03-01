@@ -29,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-IS_LOCAL = False
+IS_LOCAL = True
 
 if not IS_LOCAL:
     handler = Mangum(app)
