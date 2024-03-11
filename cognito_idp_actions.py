@@ -231,6 +231,27 @@ class CognitoIdentityProviderWrapper:
             raise
         else:
             return response
+        
+    # snippet-end:[python.example_code.cognito-idp.AdminDeleteUser]
+    def delete_user(self, user_name):
+        """
+        Deletes a user from the user pool.
+
+        :param user_name: The name of the user to delete.
+        """
+        try:
+            self.cognito_idp_client.admin_delete_user(
+                UserPoolId=self.user_pool_id, Username=user_name
+            )
+        except ClientError as err:
+            logger.error(
+                "Couldn't delete user %s. Here's why: %s: %s",
+                user_name,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise
+
 
     # snippet-start:[python.example_code.cognito-idp.AdminInitiateAuth]
     def start_sign_in(self, user_name, password):

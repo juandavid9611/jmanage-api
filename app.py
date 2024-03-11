@@ -3,14 +3,16 @@ from enum import Enum
 import os
 import random
 import time
-from typing import Optional
+from typing import Optional, Union
 from uuid import uuid4
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 import boto3
 from boto3.dynamodb.conditions import Key
 from mangum import Mangum
 from fastapi.middleware.cors import CORSMiddleware
+from JWTBearer import JWTBearer
+from auth import PermissionChecker, jwks
 from cognito_idp_actions import CognitoIdentityProviderWrapper
 
 
@@ -29,18 +31,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+auth = JWTBearer(jwks)
+
 IS_LOCAL = True
 
 if not IS_LOCAL:
     handler = Mangum(app)
 
 def _get_cognito_wrapper():
-    if not IS_LOCAL:
-        return CognitoIdentityProviderWrapper(
-            boto3.client("cognito-idp"), os.environ.get("USER_POOL_ID"), os.environ.get("USER_POOL_API_CLIENT_ID")
-        )
     return CognitoIdentityProviderWrapper(
-        boto3.client("cognito-idp"), "us-west-2_CTvMrsxtC", "7t6shka96h6eb4iucj53nrpcc0"
+        boto3.client("cognito-idp"), os.environ.get("USER_POOL_ID"), os.environ.get("USER_POOL_API_CLIENT_ID")
     )
 
 cog_wrapper = _get_cognito_wrapper()
@@ -98,6 +98,15 @@ class PutUser(BaseModel):
     company: str
     avatarUrl: Optional[str] = None
     status: str
+
+class PutCalendarEvent(BaseModel):
+    id: Optional[str] = None
+    allDay: Optional[bool] = None
+    color: Optional[str] = None
+    description: Optional[str]
+    start: Optional[int]
+    end: Union[int, str]
+    title: Optional[str]
     
 
 @app.get("/")
@@ -107,7 +116,7 @@ async def root():
         "body": "Hello from Fast API Lambda!"
     }
 
-@app.get("/users")
+@app.get("/users", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def get_users():
     table = _get_user_table()
     response = table.scan()
@@ -116,7 +125,7 @@ async def get_users():
     users_mapped = map_users(items, cog_users)
     return {'users': users_mapped}
 
-@app.get("/users/{user_id}")
+@app.get("/users/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def get_user(user_id: str):
     table = _get_user_table()
     response = table.get_item(Key={"id": user_id})
@@ -128,10 +137,10 @@ async def get_user(user_id: str):
     item["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
     return _map_user(item)
 
-@app.post("/users")
+@app.post("/users", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_user(put_user: PutUser):
     created_time = int(time.time())
-    user_response = cog_wrapper.sign_up_user(put_user.email, "vittoria2024", put_user.email, put_user.name)
+    user_response = cog_wrapper.sign_up_user("vittoria2024", put_user.email, put_user.name)
 
     item = {
         "id": user_response["UserSub"],
@@ -165,7 +174,7 @@ async def create_user(put_user: PutUser):
     item["confirmation_status"] = UserConfirmationStatus.PENDING
     return _map_user(item)
 
-@app.put("/users/{user_id}")
+@app.put("/users/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def update_user(user_id:str, put_user: PutUser):
     cog_user = cog_wrapper.get_user(put_user.email)
     if not cog_user:
@@ -195,14 +204,14 @@ async def update_user(user_id:str, put_user: PutUser):
     )
     return {"updated_user_id": put_user.id}
 
-@app.delete("/users/{user_id}")
+@app.delete("/users/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def delete_user(user_id: str):
-    # TODO: Delete user from cognito, soft delete
+    cog_wrapper.delete_user(user_id)
     table = _get_user_table()
     table.delete_item(Key={"id": user_id})
     return {"deleted_user_id": user_id}
 
-@app.get("/payment_requests")
+@app.get("/payment_requests", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_payment_requests(user_id: Optional[str] = None):
     items_mapped = []
     if user_id:
@@ -221,7 +230,7 @@ async def get_payment_requests(user_id: Optional[str] = None):
     return items_mapped
 
 
-@app.get("/payment_requests/{payment_request_id}")
+@app.get("/payment_requests/{payment_request_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def get_payment_request(payment_request_id: str):
     table = _get_payment_request_table()
     response = table.get_item(Key={"id": payment_request_id})
@@ -231,7 +240,7 @@ async def get_payment_request(payment_request_id: str):
         raise HTTPException(status_code=404, detail=f"Payment Request {payment_request_id} not found")
     return _map_payment_request(item)
 
-@app.post("/payment_requests")
+@app.post("/payment_requests", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_payment_requests(put_payment_request: PutPaymentRequest):
     created_time = int(time.time())
     table = _get_payment_request_table()
@@ -257,7 +266,7 @@ async def create_payment_requests(put_payment_request: PutPaymentRequest):
         response.append(_map_payment_request(item))
     return response
 
-@app.put("/payment_requests/{payment_request_id}")
+@app.put("/payment_requests/{payment_request_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def update_payment_request(payment_request_id: str, put_payment_request: PutPaymentRequest):
     table = _get_payment_request_table()
     table.update_item(
@@ -279,13 +288,13 @@ async def update_payment_request(payment_request_id: str, put_payment_request: P
     )
     return {"updated_payment_request_id": put_payment_request.id}
 
-@app.delete("/payment_requests/{payment_request_id}")
+@app.delete("/payment_requests/{payment_request_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def delete_payment_request(payment_request_id: str):
     table = _get_payment_request_table()
     table.delete_item(Key={"id": payment_request_id})
     return {"deleted_payment_request_id": payment_request_id}
 
-@app.get("/users/{user_id}/metrics")
+@app.get("/users/{user_id}/metrics", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_user_metrics(user_id: str):
     table = _get_user_table()
     response = table.get_item(Key={"id": user_id})
@@ -311,7 +320,7 @@ async def get_user_metrics(user_id: str):
         return initial_user_metrics
     return item.get("user_metrics")
 
-@app.put("/users/{user_id}/metrics")
+@app.put("/users/{user_id}/metrics", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def update_user_metrics(user_id: str, put_user_metrics: PutUserMetrics):
     table = _get_user_table()
     last_update = datetime.now().isoformat()
@@ -327,20 +336,58 @@ async def update_user_metrics(user_id: str, put_user_metrics: PutUserMetrics):
     )
     return {"updated_metrics": put_user_metrics.dict()}
 
-@app.get("/calendar")
+@app.get("/calendar", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_calendar():
-    return _get_events()
+    table = _get_calendar_table()
+    response = table.scan()
+    items = response.get("Items")
+    mapped_events = [_map_calendar_event(item) for item in items]
+    return mapped_events
+
+@app.post("/calendar", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def create_calendar_event(put_calendar_event: PutCalendarEvent):
+    table = _get_calendar_table()
+    item = {
+        "id": f"{uuid4().hex}",
+        "all_day": put_calendar_event.allDay,
+        "color": put_calendar_event.color,
+        "description": put_calendar_event.description,
+        "event_start": put_calendar_event.start,
+        "event_end": put_calendar_event.end,
+        "title": put_calendar_event.title
+    }
+    table.put_item(Item=item)
+    return _map_calendar_event(item)
+
+@app.put("/calendar", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def update_calendar_event(put_calendar_event: PutCalendarEvent):
+    print(put_calendar_event.dict())
+    table = _get_calendar_table()
+    update_expression, values = _get_update_expression_and_values(put_calendar_event)
+    table.update_item(
+        Key={"id": put_calendar_event.id},
+        UpdateExpression=update_expression,
+        ExpressionAttributeValues=values,
+        ReturnValues="ALL_NEW",
+    )
+    return {"updated_event_id": put_calendar_event.id}
+
+@app.delete("/calendar/{event_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def delete_calendar_event(event_id: str):
+    table = _get_calendar_table()
+    table.delete_item(Key={"id": event_id})
+    return {"deleted_event_id": event_id}
 
 def _get_payment_request_table():
-    table_name = "JmanageInfraStack-dev-PaymentRequest928AFAA0-94UPR2HVAWNB"
-    if not IS_LOCAL:
-        table_name = os.environ.get("PAYMENT_REQUEST_TABLE_NAME")
+    table_name = os.environ.get("PAYMENT_REQUEST_TABLE_NAME")
     return boto3.resource("dynamodb").Table(table_name)
 
 def _get_user_table():
-    table_name = "JmanageInfraStack-dev-User00B015A1-130A0CR764IXY"
-    if not IS_LOCAL:
-        table_name = os.environ.get("USER_TABLE_NAME")
+    table_name = os.environ.get("USER_TABLE_NAME")
+    return boto3.resource("dynamodb").Table(table_name)
+
+def _get_calendar_table():
+    table_name = os.environ.get("CALENDAR_TABLE_NAME")
     return boto3.resource("dynamodb").Table(table_name)
 
 def map_users(db_users, cog_users):
@@ -374,6 +421,32 @@ def _map_payment_request(item):
     item["totalAmount"] = item.pop("user_price", None)
     item["sponsorPrice"] = item.pop("sponsor_price", None)
     item["sponsorPercentage"] = item.pop("sponsor_percentage", None)
+    return item
+
+def _map_calendar_event(item):
+    item["allDay"] = item.pop("all_day", None)
+    item["start"] = item.pop("event_start", None)
+    item["end"] = item.pop("event_end", None)
+    return item
+
+def _get_update_expression_and_values(put_calendar_event):
+    update_expression = "SET "
+    values = {}
+    for key, value in put_calendar_event.dict().items():
+        if key != "id" and value is not None:
+            update_expression += f"{map_attribute_key(key)} = :{map_attribute_key(key)}, "
+            values[f":{map_attribute_key(key)}"] = value
+    update_expression = update_expression[:-2]
+    print(update_expression)
+    return update_expression, values
+
+def map_attribute_key(item):
+    if item == "allDay":
+        return "all_day"
+    if item == "start":
+        return "event_start"
+    if item == "end":
+        return "event_end"
     return item
 
 def _get_events():
