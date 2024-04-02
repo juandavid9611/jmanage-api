@@ -12,7 +12,7 @@ from boto3.dynamodb.conditions import Key
 from mangum import Mangum
 from fastapi.middleware.cors import CORSMiddleware
 from JWTBearer import JWTBearer
-from auth import PermissionChecker, jwks
+from auth import PermissionChecker, get_current_user, jwks
 from cognito_idp_actions import CognitoIdentityProviderWrapper
 
 
@@ -33,9 +33,10 @@ app.add_middleware(
 
 auth = JWTBearer(jwks)
 
-IS_LOCAL = True
+USE_MANGUM = os.environ.get("USE_MANGUM", "false")
 
-if not IS_LOCAL:
+if USE_MANGUM:
+    print('Using Mangum')
     handler = Mangum(app)
 
 def _get_cognito_wrapper():
@@ -107,6 +108,7 @@ class PutCalendarEvent(BaseModel):
     start: Optional[int]
     end: Union[int, str]
     title: Optional[str]
+    category: Optional[str]
     
 
 @app.get("/")
@@ -123,9 +125,9 @@ async def get_users():
     items = response.get("Items")
     cog_users = cog_wrapper.list_users()
     users_mapped = map_users(items, cog_users)
-    return {'users': users_mapped}
+    return {"users": users_mapped}
 
-@app.get("/users/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+@app.get("/users/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_user(user_id: str):
     table = _get_user_table()
     response = table.get_item(Key={"id": user_id})
@@ -324,7 +326,6 @@ async def get_user_metrics(user_id: str):
 async def update_user_metrics(user_id: str, put_user_metrics: PutUserMetrics):
     table = _get_user_table()
     last_update = datetime.now().isoformat()
-    print(last_update)
     put_user_metrics.last_update = last_update
     table.update_item(
         Key={"id": user_id},
@@ -354,14 +355,15 @@ async def create_calendar_event(put_calendar_event: PutCalendarEvent):
         "description": put_calendar_event.description,
         "event_start": put_calendar_event.start,
         "event_end": put_calendar_event.end,
-        "title": put_calendar_event.title
+        "title": put_calendar_event.title,
+        "category": put_calendar_event.category,
+        "participants": {}
     }
     table.put_item(Item=item)
     return _map_calendar_event(item)
 
 @app.put("/calendar", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def update_calendar_event(put_calendar_event: PutCalendarEvent):
-    print(put_calendar_event.dict())
     table = _get_calendar_table()
     update_expression, values = _get_update_expression_and_values(put_calendar_event)
     table.update_item(
@@ -377,6 +379,28 @@ async def delete_calendar_event(event_id: str):
     table = _get_calendar_table()
     table.delete_item(Key={"id": event_id})
     return {"deleted_event_id": event_id}
+
+@app.post("/calendar/{event_id}/participate", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+async def participate_calendar_event(event_id: str, user = Depends(get_current_user), participate_data: dict = None):
+    table = _get_calendar_table()
+    user_id = user["sub"]
+    response = table.get_item(Key={"id": event_id})
+    item = response.get("Item")
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+    if participate_data.get("value") == True and user_id not in item["participants"]:
+        item["participants"][user_id] = user["name"]
+    if participate_data.get("value") == False and user_id in item["participants"]:
+        del item["participants"][user_id]
+    table.update_item(
+        Key={"id": event_id},
+        UpdateExpression="SET participants = :participants",
+        ExpressionAttributeValues={
+            ":participants": item["participants"],
+            },
+        ReturnValues="ALL_NEW",
+    )
+    return {"participated_event_id": event_id}
 
 def _get_payment_request_table():
     table_name = os.environ.get("PAYMENT_REQUEST_TABLE_NAME")
@@ -432,12 +456,12 @@ def _map_calendar_event(item):
 def _get_update_expression_and_values(put_calendar_event):
     update_expression = "SET "
     values = {}
+    excluded_keys = ["id", "participants"]
     for key, value in put_calendar_event.dict().items():
-        if key != "id" and value is not None:
+        if key not in excluded_keys and value:
             update_expression += f"{map_attribute_key(key)} = :{map_attribute_key(key)}, "
             values[f":{map_attribute_key(key)}"] = value
     update_expression = update_expression[:-2]
-    print(update_expression)
     return update_expression, values
 
 def map_attribute_key(item):
@@ -448,91 +472,3 @@ def map_attribute_key(item):
     if item == "end":
         return "event_end"
     return item
-
-def _get_events():
-    response = {
-        "events": [
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b2",
-                "allDay": True,
-                "color": "#00A76F",
-                "description": "Atque eaque ducimus minima distinctio velit. Laborum et veniam officiis. Delectus ex saepe hic id laboriosam officia. Odit nostrum qui illum saepe debitis ullam. Laudantium beatae modi fugit ut. Dolores consequatur beatae nihil voluptates rem maiores.",
-                "start": 1707309011395,
-                "end": 1707314411395,
-                "title": "The Ultimate Guide to Productivity Hacks"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b3",
-                "allDay": False,
-                "color": "#00B8D9",
-                "description": "Rerum eius velit dolores. Explicabo ad nemo quibusdam. Voluptatem eum suscipit et ipsum et consequatur aperiam quia. Rerum nulla sequi recusandae illum velit quia quas. Et error laborum maiores cupiditate occaecati.",
-                "start": 1707807611395,
-                "end": 1707820211395,
-                "title": "Partido Amistoso sede Escuela de Ingenieros"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b4",
-                "allDay": False,
-                "color": "#22C55E",
-                "description": "Et non omnis qui. Qui sunt deserunt dolorem aut velit cumque adipisci aut enim. Nihil quis quisquam nesciunt dicta nobis ab aperiam dolorem repellat. Voluptates non blanditiis. Error et tenetur iste soluta cupiditate ratione perspiciatis et. Quibusdam aliquid nam sunt et quisquam non esse.",
-                "start": 1708606811395,
-                "end": 1708621211395,
-                "title": "How to Master the Art of Public Speaking"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b5",
-                "allDay": False,
-                "color": "#8E33FF",
-                "description": "Nihil ea sunt facilis praesentium atque. Ab animi alias sequi molestias aut velit ea. Sed possimus eos. Et est aliquid est voluptatem.",
-                "start": 1708347611395,
-                "end": 1708362011395,
-                "title": "Entrega de Uniformes - Anuncio de Patrocinadores"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b6",
-                "allDay": False,
-                "color": "#FFAB00",
-                "description": "Non rerum modi. Accusamus voluptatem odit nihil in. Quidem et iusto numquam veniam culpa aperiam odio aut enim. Quae vel dolores. Pariatur est culpa veritatis aut dolorem.",
-                "start": 1708596911395,
-                "end": 1708597811395,
-                "title": "Entrenamiento Vittoria Femenino"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b7",
-                "allDay": False,
-                "color": "#FF5630",
-                "description": "Est enim et sit non impedit aperiam cumque animi. Aut eius impedit saepe blanditiis. Totam molestias magnam minima fugiat.",
-                "start": 1708034399999,
-                "end": 1708034400000,
-                "title": "Partido Amistoso sede Creativo. Hungaros"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b8",
-                "allDay": False,
-                "color": "#003768",
-                "description": "Unde a inventore et. Sed esse ut. Atque ducimus quibusdam fuga quas id qui fuga.",
-                "start": 1708605911395,
-                "end": 1708606211395,
-                "title": "Entrenamiento Vittoria Masculino"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b9",
-                "allDay": False,
-                "color": "#00B8D9",
-                "description": "Eaque natus adipisci soluta nostrum dolorem. Nesciunt ipsum molestias ut aliquid natus ut omnis qui fugiat. Dolor et rem. Ut neque voluptatem blanditiis quasi ullam deleniti.",
-                "start": 1708609811395,
-                "end": 1708610111395,
-                "title": "10 Must-Visit Destinations for Adventure Travelers"
-            },
-            {
-                "id": "e99f09a7-dd88-49d5-b1c8-1daf80c2d7b10",
-                "allDay": False,
-                "color": "#7A0916",
-                "description": "Nam et error exercitationem qui voluptate optio. Officia omnis qui accusantium ipsam qui. Quia sequi nulla perspiciatis optio vero omnis maxime omnis ipsum. Perspiciatis consequuntur asperiores veniam dolores.",
-                "start": 1708863131395,
-                "end": 1709036411395,
-                "title": "JManage - Vittoria despliegue"
-            }
-        ]
-    }
-    return response
