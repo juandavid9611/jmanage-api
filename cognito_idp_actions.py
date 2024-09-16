@@ -194,8 +194,19 @@ class CognitoIdentityProviderWrapper:
         :return: The list of users.
         """
         try:
-            response = self.cognito_idp_client.list_users(UserPoolId=self.user_pool_id)
-            users = response["Users"]
+            users = []
+            next_page = None
+            while True:
+                if next_page is None:
+                    response = self.cognito_idp_client.list_users(UserPoolId=self.user_pool_id)
+                else:
+                    response = self.cognito_idp_client.list_users(
+                        UserPoolId=self.user_pool_id, PaginationToken=next_page
+                    )
+                users.extend(response["Users"])
+                next_page = response.get("PaginationToken", None)
+                if next_page is None:
+                    break
         except ClientError as err:
             logger.error(
                 "Couldn't list users for %s. Here's why: %s: %s",

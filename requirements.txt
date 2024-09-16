@@ -9,13 +9,15 @@ ecdsa==0.18.0
 exceptiongroup==1.1.3
 fastapi==0.99.1
 h11==0.14.0
+httpcore==1.0.5
 httptools==0.6.1
+httpx==0.27.0
 idna==3.4
 jmespath==1.0.1
 mangum==0.17.0
 pyasn1==0.5.1
-pydantic==1.10.12
-pydantic_core==2.10.1
+pydantic==1.10.15
+pydantic_core==2.0.1
 python-dateutil==2.8.2
 python-dotenv==1.0.1
 python-jose==3.3.0
@@ -26,6 +28,7 @@ s3transfer==0.7.0
 six==1.16.0
 sniffio==1.3.0
 starlette==0.27.0
+trycourier==5.0.0
 typing_extensions==4.8.0
 urllib3==1.26.18
 uvicorn==0.27.1

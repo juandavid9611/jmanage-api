@@ -22,9 +22,9 @@ async def get_current_user(
     credentials: JWTAuthorizationCredentials = Depends(auth)
 ) -> str:
     try:
-        return credentials.claims
+        return credentials.claims # type: ignore
     except KeyError:
-        HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Username missing")
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Username missing")
 
 class PermissionChecker:
 
