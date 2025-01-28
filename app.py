@@ -5,7 +5,7 @@ import os
 import time
 from typing import Optional, Union
 from uuid import uuid4
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -149,6 +149,13 @@ class PutTour(BaseModel):
     scores: Optional[dict] = None
     createdAt: Optional[str] = None
     calendarEventId: Optional[str] = None
+    group: Optional[str] = None
+
+class PutWorkspace(BaseModel):
+    id: Optional[str] = None
+    name: Optional[str] = None
+    logo: Optional[str] = None
+    plan: Optional[str] = None
 
 class PatchProperty(BaseModel):
     name: str
@@ -162,10 +169,12 @@ async def root():
     }
 
 @app.get("/users", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def get_users():
+async def get_users(workspace_id: str = Query(None)):
     table = _get_user_table()
     response = table.scan()
     items = response.get("Items")
+    if workspace_id:
+        items = [item for item in items if item.get("user_group") == workspace_id]
     cog_users = cog_wrapper.list_users()
     users_mapped = map_users(items, cog_users)
     return {"users": users_mapped}
@@ -192,6 +201,7 @@ async def create_user(create_user: CreateUser):
         "email": create_user.email,
         "user_status": UserStatus.ACTIVE,
         "created_time": created_time,
+        "user_group": "male",
         "user_metrics": {
             "asistencia_entrenos": 0,
             "asistencia_partidos": 0,
@@ -268,7 +278,6 @@ async def generate_user_presigned_url(user_id: str, files:list, user = Depends(g
     content_type = files[0]['content_type']
     try:
         full_key = f"{folder_path}{file_name}"
-        print(bucket_name, full_key, content_type)
         presigned_url = s3.generate_presigned_url(
             ClientMethod = 'put_object',
             Params={'Bucket': bucket_name, 'Key': full_key, 'ContentType': content_type},
@@ -290,7 +299,7 @@ async def delete_user(user_id: str):
     return {"deleted_user_id": user_id}
 
 @app.get("/payment_requests", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def get_payment_requests(user_id: Optional[str] = None):
+async def get_payment_requests(user_id: Optional[str] = None, workspace_id: Optional[str] = None):
     items_mapped = []
     if user_id:
         table = _get_payment_request_table()
@@ -300,11 +309,19 @@ async def get_payment_requests(user_id: Optional[str] = None):
         )
         items = response.get("Items")
         items_mapped = [_map_payment_request(item, False) for item in items]
-    else :
+        return items_mapped
+    
+    if workspace_id:
         table = _get_payment_request_table()
         response = table.scan()
         items = response.get("Items")
-        items_mapped = [_map_payment_request(item, False) for item in items]
+        items_mapped = [_map_payment_request(item, False) for item in items if item.get("user_group") == workspace_id]
+        return items_mapped
+    
+    table = _get_payment_request_table()
+    response = table.scan()
+    items = response.get("Items")
+    items_mapped = [_map_payment_request(item, False) for item in items]
     return items_mapped
 
 
@@ -473,10 +490,12 @@ async def set_default_late_arrives():
     return {"message": "Default late arrives set"}
 
 @app.get("/calendar")
-async def get_calendar():
+async def get_calendar(workspace_id: str = Query(None)):
     table = _get_calendar_table()
     response = table.scan()
     items = response.get("Items")
+    if workspace_id:
+        items = [item for item in items if item.get("user_group") == workspace_id]
     mapped_events = [_map_calendar_event(item) for item in items]
     return mapped_events
 
@@ -532,12 +551,13 @@ async def update_calendar_event(put_calendar_event: PutCalendarEvent):
                     "id": participant,
                     "name": participants[participant],
                     "avatarUrl": None,
-                    "guests": 1,
                     "approved": True,
                     "late": False,
                     "yellowCard": False,
                     "redCard": False,
                     "mvp": False,
+                    "goals": 0,
+                    "assists": 0,
                 }
         put_tour.bookers = bookers
         put_tour.calendarEventId = put_calendar_event.id
@@ -604,6 +624,8 @@ async def participate_calendar_event(event_id: str, user = Depends(get_current_u
                 "yellowCard": False,
                 "redCard": False,
                 "mvp": False,
+                "goals": 0,
+                "assists": 0,
 
             }
             tour["bookers"][user_id] = user_booked
@@ -658,6 +680,16 @@ async def send_massive_welcome_notification():
         user_email = item["email"]
         user_name = item["user_name"]
         send_welcome_notification(user_email, user_name)
+
+@app.post("/send_christmas_notification", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def send_massive_christmas_notification():
+    table = _get_user_table()
+    response = table.scan()
+    items = response.get("Items")
+    for item in items:
+        user_email = item["email"]
+        user_name = item["user_name"]
+        send_christmas_notification(user_email, user_name)
 
 @app.get("/bioimpedance", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def get_bioimpedance():
@@ -773,16 +805,19 @@ async def create_tour(put_tour: PutTour):
         "event_location": put_tour.location,
         "scores": put_tour.scores,
         "created_at": datetime.now().isoformat(),
-        "calendar_event_id": put_tour.calendarEventId
+        "calendar_event_id": put_tour.calendarEventId,
+        "user_group": put_tour.group,
     }
     table.put_item(Item=item)
     return _map_tour(item)
 
 @app.get("/tours", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def get_tours():
+async def get_tours(workspace_id: Optional[str] = None):
     table = _get_tour_table()
     response = table.scan()
     items = response.get("Items")
+    if workspace_id:
+        items = [item for item in items if item.get("user_group") == workspace_id]
     mapped_tours = [_map_tour(item) for item in items]
     return mapped_tours
 
@@ -880,6 +915,10 @@ async def update_tour_booker_property(tour_id: str, booker_id, patch_property: P
         booker["redCard"] = patch_property.value == "True"
     elif patch_property.name == "mvp":
         booker["mvp"] = patch_property.value == "True"
+    elif patch_property.name == "goals":
+        booker["goals"] = int(patch_property.value)
+    elif patch_property.name == "assists":
+        booker["assists"] = int(patch_property.value)
     else:
         raise HTTPException(status_code=400, detail=f"Property {patch_property.name} not found")
     table.update_item(
@@ -906,6 +945,8 @@ def update_bookers_model():
             booker["yellowCard"] = booker.get("yellowCard", False)
             booker["redCard"] = booker.get("redCard", False)
             booker["mvp"] = booker.get("mvp", False)
+            booker["goals"] = booker.get("goals", 0)
+            booker["assists"] = booker.get("assists", 0)
         table.update_item(
             Key={"id": item["id"]},
             UpdateExpression="SET bookers = :bookers",
@@ -915,6 +956,51 @@ def update_bookers_model():
             ReturnValues="ALL_NEW",
         )
     return {"message": "Bookers model updated"}
+
+@app.get("/workspaces", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+def get_workspaces(user = Depends(get_current_user)):
+    table = _get_workspace_table()
+    response = table.scan()
+    items = response.get("Items")
+    if user["custom:role"] == "admin":
+        return items
+    user_db = _get_user_table().get_item(Key={"id": user["sub"]}).get("Item")
+    if not user_db:
+        raise HTTPException(status_code=404, detail=f"User {user['sub']} not found")
+    return [item for item in items if item["id"] == user_db["user_group"]]
+
+@app.post("/workspaces", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def create_workspace(put_workspace: PutWorkspace):
+    table = _get_workspace_table()
+    item = {
+        "id": put_workspace.id,
+        "name": put_workspace.name,
+        "logo": put_workspace.logo,
+        "plan": put_workspace.plan,
+    }
+    table.put_item(Item=item)
+    return item
+
+@app.put("/workspaces/{workspace_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def update_workspace(workspace_id: str, put_workspace: PutWorkspace):
+    table = _get_workspace_table()
+    table.update_item(
+        Key={"id": workspace_id},
+        UpdateExpression="SET name = :name, logo = :logo, plan = :plan",
+        ExpressionAttributeValues={
+            ":name": put_workspace.name,
+            ":logo": put_workspace.logo,
+            ":plan": put_workspace.plan,
+            },
+        ReturnValues="ALL_NEW",
+    )
+    return {"updated_workspace_id": workspace_id}
+
+@app.delete("/workspaces/{workspace_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def delete_workspace(workspace_id: str):
+    table = _get_workspace_table()
+    table.delete_item(Key={"id": workspace_id})
+    return {"deleted_workspace_id": workspace_id}
 
 def get_notification_fields_changed(old_payment_request, new_payment_request):
     fields_changed = []
@@ -981,6 +1067,18 @@ def send_welcome_notification(user_email, user_name):
     )
     return response
 
+def send_christmas_notification(user_email, user_name):
+    response = courier_client.send_message(
+        message={
+            'to': {'email': user_email},
+            'template': '070Z3SZX8V4YAXMTAEWKCXW2NVEV',
+            'data': {
+                "userName": user_name,
+            }
+        }
+    )
+    return response
+
 def send_overdue_payment_notification(email, user_name,  overdue_payment_requests):
     response = courier_client.send_message(
         message={
@@ -1036,7 +1134,8 @@ def _get_tour_from_calendar_event(put_calendar_event: PutCalendarEvent):
         tags=[],
         location=put_calendar_event.location,
         scores={"home": 0, "away": 0},
-        calendarEventId=put_calendar_event.id
+        calendarEventId=put_calendar_event.id,
+        group=put_calendar_event.group
     )
     return put_tour
     
@@ -1074,6 +1173,10 @@ def _get_calendar_table():
 
 def _get_tour_table():
     table_name = os.environ.get("TOUR_TABLE_NAME")
+    return boto3.resource("dynamodb").Table(table_name)
+
+def _get_workspace_table():
+    table_name = os.environ.get("WORKSPACE_TABLE_NAME")
     return boto3.resource("dynamodb").Table(table_name)
 
 def _get_s3_bucket_name():
@@ -1133,6 +1236,7 @@ def _map_tour(item):
     item["tourGuides"] = item.pop("tour_guides", None)
     item["location"] = item.pop("event_location", None)
     item["calendarEventId"] = item.pop("calendar_event_id", None)
+    item["group"] = item.pop("user_group", None)
     item["images"] = [_get_s3_public_url(_get_s3_bucket_name(), image) for image in item.get("images", [])]
     return item
 
