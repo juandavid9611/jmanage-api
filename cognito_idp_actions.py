@@ -579,3 +579,41 @@ class CognitoIdentityProviderWrapper:
 
 
 # snippet-end:[python.example_code.cognito-idp.CognitoIdentityProviderWrapper.full]
+
+    def disable_user(self, user_name):
+        """
+        Disables a user from the user pool.
+
+        :param user_name: The name of the user to disable.
+        """
+        try:
+            self.cognito_idp_client.admin_disable_user(
+                UserPoolId=self.user_pool_id, Username=user_name
+            )
+        except ClientError as err:
+            logger.error(
+                "Couldn't disable user %s. Here's why: %s: %s",
+                user_name,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise
+    
+    def enable_user(self, user_name):
+        """
+        Enables a user from the user pool.
+
+        :param user_name: The name of the user to enable.
+        """
+        try:
+            self.cognito_idp_client.admin_enable_user(
+                UserPoolId=self.user_pool_id, Username=user_name
+            )
+        except ClientError as err:
+            logger.error(
+                "Couldn't enable user %s. Here's why: %s: %s",
+                user_name,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise

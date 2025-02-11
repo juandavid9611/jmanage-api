@@ -18,6 +18,8 @@ from trycourier import Courier
 import locale
 from typing import List
 import re
+import requests
+import uvicorn
 
 
 app = FastAPI()
@@ -92,7 +94,7 @@ class PutUserAvatar(BaseModel):
 
 class UserStatus(str, Enum):
     ACTIVE = "active"
-    INACTIVE = "inactive"
+    DISABLED = "disabled"
 
 class UserConfirmationStatus(str, Enum):
     CONFIRMED = "confirmed"
@@ -169,12 +171,14 @@ async def root():
     }
 
 @app.get("/users", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def get_users(workspace_id: str = Query(None)):
+async def get_users(workspace_id: str = Query(None), include_disabled: bool = False):
     table = _get_user_table()
     response = table.scan()
     items = response.get("Items")
     if workspace_id:
         items = [item for item in items if item.get("user_group") == workspace_id]
+    if not include_disabled:
+        items = [item for item in items if item.get("user_status") == UserStatus.ACTIVE]
     cog_users = cog_wrapper.list_users()
     users_mapped = map_users(items, cog_users)
     return {"users": users_mapped}
@@ -250,6 +254,35 @@ async def update_user(user_id:str, put_user: PutUser):
         ReturnValues="ALL_NEW",
     )
     return {"updated_user_id": put_user.id}
+
+@app.put("/users/{user_id}/disable", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def disable_user(user_id: str):
+    table = _get_user_table()
+    cog_wrapper.disable_user(user_id)
+    table.update_item(
+        Key={"id": user_id},
+        UpdateExpression="SET user_status = :user_status",
+        ExpressionAttributeValues={
+            ":user_status": UserStatus.DISABLED,
+            },
+        ReturnValues="ALL_NEW",
+    )
+    return {"disabled_user_id": user_id}
+
+@app.put("/users/{user_id}/enable", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def enable_user(user_id: str):
+    table = _get_user_table()
+    cog_wrapper.enable_user(user_id)
+    table.update_item(
+        Key={"id": user_id},
+        UpdateExpression="SET user_status = :user_status",
+        ExpressionAttributeValues={
+            ":user_status": UserStatus.ACTIVE,
+            },
+        ReturnValues="ALL_NEW",
+    )
+    return {"enabled_user_id": user_id}
+
 
 @app.put("/users/{user_id}/avatar", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def update_user_avatar_url(user_id: str, userAvatar: PutUserAvatar):
@@ -450,6 +483,7 @@ async def get_late_arrives(user_id: str):
     table = _get_user_table()
     response = table.scan()
     items = response.get("Items")
+    items = [item for item in items if item['user_status'] == UserStatus.ACTIVE]
     cog_users = cog_wrapper.list_users()
     users_mapped = map_users(items, cog_users)
     late_arrives = []
@@ -1041,6 +1075,59 @@ def send_payment_request_creation_notification(user_email, user_name, concept, v
     )
     return response
 
+@app.post("/send_payment_request_creation_push_notification", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def send_payment_request_creation_push_notification(user_id):
+
+    url = "https://api.magicbell.com/broadcasts"
+
+    user = _get_user_table().get_item(Key={"id": user_id}).get("Item")
+
+    payload = {
+        "broadcast": {
+            "title": "Bienvenido a tu club Vittoria CD", 
+            "content": "Ahora contaremos con notificaciones para mantenerte informado en tu dia a dia",
+            "category": "order_created",
+            "topic": "order:33098",
+            "recipients": [
+                {
+                    "email": user['email']
+                },
+            ]
+        }
+    }
+
+    headers = {
+        "X-MAGICBELL-API-KEY": os.environ.get("MAGICBELL_API_KEY"),
+        "X-MAGICBELL-API-SECRET": os.environ.get("MAGICBELL_API_SECRET"),
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    print(response.json())
+
+@app.get("/top_goals_and_assists")
+def get_top_goals_and_assists(workspace_id: str = Query(None)):
+    table = _get_tour_table()
+    response = table.scan()
+    items = response.get("Items")
+    items = [item for item in items if item.get("user_group") == workspace_id]
+    top_goals_and_assists = {}
+    for item in items:
+        bookers = item.get("bookers", {})
+        for booker_id in bookers:
+            booker = bookers[booker_id]
+            if booker["goals"] > 0 or booker["assists"] > 0:
+                if booker_id not in top_goals_and_assists:
+                    top_goals_and_assists[booker_id] = {
+                        "id": booker_id,
+                        "name": booker["name"],
+                        "avatarUrl": booker["avatarUrl"],
+                        "goals": 0,
+                        "assists": 0,
+                    }
+                top_goals_and_assists[booker_id]["goals"] += booker["goals"]
+                top_goals_and_assists[booker_id]["assists"] += booker["assists"]
+    return list(top_goals_and_assists.values())
+
 def send_payment_request_update_notification(user_email, user_name, concept, fields_changed):
     response = courier_client.send_message(
         message={
@@ -1190,7 +1277,7 @@ def map_users(db_users, cog_users):
     users = []
     for db_user in db_users:
         cog_user = cog_users_map[db_user["id"]]
-        db_user["confirmation_status"] =  UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
+        db_user["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
         user = _map_user(db_user)
         users.append(user)
     return users
@@ -1289,3 +1376,5 @@ def try_parsing_date(text):
         pass
     raise ValueError('no valid date format found')
     
+if __name__ == "__main__":
+    uvicorn.run("app:app", host="0.0.0.0", port=8085, reload=True)
