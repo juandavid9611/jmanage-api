@@ -12,3 +12,7 @@ zip lambda_function.zip -u auth.py
 
 # Clean up
 rm -rf lib
+
+git add .
+git commit -m "Update lambda function"
+git push

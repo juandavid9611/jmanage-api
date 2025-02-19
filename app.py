@@ -20,6 +20,7 @@ from typing import List
 import re
 import requests
 import uvicorn
+import locale
 
 
 app = FastAPI()
@@ -75,8 +76,7 @@ class PutPaymentRequest(BaseModel):
     paymentRequestTo: Optional[list] = None
     isVerified: Optional[bool] = None
     userPrice: int
-    sponsorPrice: int
-    sponsorPercentage: int
+    overduePrice: Optional[int] = None
 
 class PutUserMetrics(BaseModel):
     asistencia_entrenos: int
@@ -121,6 +121,7 @@ class PutUser(BaseModel):
     emergencyContactPhoneNumber: str
     emergencyContactRelationship: str
     status: str
+    shirtNumber: str
 
 class PutCalendarEvent(BaseModel):
     id: Optional[str] = None
@@ -216,7 +217,8 @@ async def create_user(create_user: CreateUser):
             "puntaje_asistencia_description": "",
             "puntaje_asistencia": 3 ,
             "last_update": datetime.now().isoformat()
-        }
+        },
+        "shirt_number": "0",
     }
 
     table = _get_user_table()
@@ -235,7 +237,7 @@ async def update_user(user_id:str, put_user: PutUser):
     table = _get_user_table()
     table.update_item(
         Key={"id": put_user.id},
-        UpdateExpression="SET user_name = :user_name, identity_card_number = :identity_card_number, phone_number = :phone_number, country = :country, city = :city, address = :address, user_group = :user_group, rh = :rh, eps = :eps, emergency_contact_name = :emergency_contact_name, emergency_contact_phone_number = :emergency_contact_phone_number, emergency_contact_relationship = :emergency_contact_relationship, user_status = :user_status",
+        UpdateExpression="SET user_name = :user_name, identity_card_number = :identity_card_number, phone_number = :phone_number, country = :country, city = :city, address = :address, user_group = :user_group, rh = :rh, eps = :eps, emergency_contact_name = :emergency_contact_name, emergency_contact_phone_number = :emergency_contact_phone_number, emergency_contact_relationship = :emergency_contact_relationship, user_status = :user_status, shirt_number = :shirt_number",
         ExpressionAttributeValues={
             ":user_name": put_user.name, 
             ":identity_card_number": put_user.identityCardNumber,
@@ -249,7 +251,8 @@ async def update_user(user_id:str, put_user: PutUser):
             ":emergency_contact_name": put_user.emergencyContactName,
             ":emergency_contact_phone_number": put_user.emergencyContactPhoneNumber,
             ":emergency_contact_relationship": put_user.emergencyContactRelationship,
-            ":user_status": put_user.status
+            ":user_status": put_user.status,
+            ":shirt_number": put_user.shirtNumber,
             },
         ReturnValues="ALL_NEW",
     )
@@ -385,8 +388,7 @@ async def create_payment_requests(put_payment_request: PutPaymentRequest):
                 "user_id": user["id"],
                 "user_group": put_payment_request.group,
                 "user_price": put_payment_request.userPrice,
-                "sponsor_price": put_payment_request.sponsorPrice,
-                "sponsor_percentage": put_payment_request.sponsorPercentage,
+                "overdue_price": put_payment_request.overduePrice,
                 "payment_status": PaymentRequestStatus.PENDING,
                 "created_time": created_time,
             }
@@ -395,6 +397,7 @@ async def create_payment_requests(put_payment_request: PutPaymentRequest):
             table.put_item(Item=item)
             response.append(_map_payment_request(item, False))
             send_payment_request_creation_notification(user["email"], user["name"], put_payment_request.concept, put_payment_request.userPrice, put_payment_request.dueDate)
+            send_payment_request_creation_magic_bell_notification(user["email"], put_payment_request.concept, put_payment_request.userPrice, put_payment_request.dueDate)
     return response
 
 @app.put("/payment_requests/{payment_request_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
@@ -407,7 +410,7 @@ async def update_payment_request(payment_request_id: str, put_payment_request: P
     
     table.update_item(
         Key={"id": put_payment_request.id},
-        UpdateExpression="SET create_date = :create_date, due_date = :due_date, concept = :concept, description = :description, category = :category, user_group = :user_group, user_price = :user_price, sponsor_price = :sponsor_price, sponsor_percentage = :sponsor_percentage, payment_status = :payment_status",
+        UpdateExpression="SET create_date = :create_date, due_date = :due_date, concept = :concept, description = :description, category = :category, user_group = :user_group, user_price = :user_price, overdue_price = :overdue_price, payment_status = :payment_status",
         ExpressionAttributeValues={
             ":create_date": put_payment_request.createDate, 
             ":due_date": put_payment_request.dueDate,
@@ -416,8 +419,7 @@ async def update_payment_request(payment_request_id: str, put_payment_request: P
             ":category": put_payment_request.category,
             ":user_group": put_payment_request.group,
             ":user_price": put_payment_request.userPrice,
-            ":sponsor_price": put_payment_request.sponsorPrice,
-            ":sponsor_percentage": put_payment_request.sponsorPercentage,
+            ":overdue_price": put_payment_request.overduePrice,
             ":payment_status": put_payment_request.status
             },
         ReturnValues="ALL_NEW",
@@ -427,6 +429,8 @@ async def update_payment_request(payment_request_id: str, put_payment_request: P
     notification_fields_changed = get_notification_fields_changed(item, new_item)
     if notification_fields_changed:
         send_payment_request_update_notification(user["email"], user["name"], new_item['concept'], notification_fields_changed)
+        send_payment_request_update_magic_bell_notification(user["email"], new_item['concept'])
+
     return {"updated_payment_request_id": put_payment_request.id}
 
 @app.delete("/payment_requests/{payment_request_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
@@ -558,6 +562,9 @@ async def create_calendar_event(put_calendar_event: PutCalendarEvent):
         tour = await create_tour(put_tour)
         calendar_item["tour_id"] = tour["id"]
     table.put_item(Item=calendar_item)
+    users_from_group = _get_users_from_group(put_calendar_event.group)
+    user_emails = [user["email"] for user in users_from_group]
+    _send_event_creation_magic_bell_notification(user_emails, put_calendar_event)
     return _map_calendar_event(calendar_item)
 
 @app.put("/calendar", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
@@ -690,30 +697,24 @@ async def process_overdue_request_payments():
         due_datetime = try_parsing_date(item["due_date"])
         due_datetime = due_datetime.replace(tzinfo=None)
         if due_datetime < datetime_now and item["payment_status"] == PaymentRequestStatus.PENDING:
+            overdue_price = item.get("overdue_price", 0)
+            new_price = item["user_price"] if overdue_price == 0 else overdue_price
             table.update_item(
                 Key={"id": item["id"]},
-                UpdateExpression="SET payment_status = :payment_status",
+                UpdateExpression="SET payment_status = :payment_status, user_price = :user_price",
                 ExpressionAttributeValues={
-                    ":payment_status": PaymentRequestStatus.OVERDUE
+                    ":payment_status": PaymentRequestStatus.OVERDUE,
+                    ":user_price": new_price
                     },
                 ReturnValues="ALL_NEW",
             )
             processed_request_payments.append(
                 {"id": item["id"], "concept": item["concept"], "to_name": item["payment_request_to"]["name"], "to_email": item["payment_request_to"]["email"]}
             )
+    send_overdue_payment_magic_bell_notification(processed_request_payments)
     send_overdue_payment_notification('loga9822@hotmail.com', "Luis Garcia", processed_request_payments)
     send_overdue_payment_notification('clubdeportivovittoria+pagos@gmail.com', "Vittoria CD", processed_request_payments)
     return {"processed_request_payments": processed_request_payments}
-
-@app.post("/send_welcome_notification", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
-async def send_massive_welcome_notification():
-    table = _get_user_table()
-    response = table.scan()
-    items = response.get("Items")
-    for item in items:
-        user_email = item["email"]
-        user_name = item["user_name"]
-        send_welcome_notification(user_email, user_name)
 
 @app.post("/send_christmas_notification", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def send_massive_christmas_notification():
@@ -1075,6 +1076,28 @@ def send_payment_request_creation_notification(user_email, user_name, concept, v
     )
     return response
 
+def send_payment_request_creation_magic_bell_notification(user_email, concept, value, due_date):
+    formatted_due_date = try_parsing_date(due_date).strftime("%d/%m/%Y")
+    title = "Nuevo pago pendiente"
+    concept = f"Se ha generado un nuevo pago por {locale.currency(value, grouping=True)} con fecha de vencimiento el {formatted_due_date}"
+    category = "payment_request_created"
+    _send_magicbell_notification(user_email, title, concept, category)
+
+def send_payment_request_update_magic_bell_notification(user_email, concept):
+    title = "Actualización en cobro"
+    content = f"Se han registrado cambios en el cobro: {concept}"
+    category = "payment_request_updated"
+    _send_magicbell_notification(user_email, title, content, category)
+
+def send_overdue_payment_magic_bell_notification(overdue_payment_requests):
+    for payment_request in overdue_payment_requests:
+        user_email = payment_request["to_email"]
+        title = "Pago vencido"
+        content = f"El pago por {payment_request['concept']} se encuentra vencido"
+        category = "payment_request_overdue"
+        _send_magicbell_notification(user_email, title, content, category)
+
+
 @app.post("/send_payment_request_creation_push_notification", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 def send_payment_request_creation_push_notification(user_id):
 
@@ -1178,6 +1201,67 @@ def send_overdue_payment_notification(email, user_name,  overdue_payment_request
         }
     )
     return response
+
+def _send_event_creation_magic_bell_notification(user_emails, calendar_event):
+    title = "Nuevo evento: " + calendar_event.title
+    location = calendar_event.location
+    description = calendar_event.description
+    event_datetime = parse_timestamp_to_datetime(calendar_event.start)
+    event_day = parse_datetime_to_pretty_es(event_datetime)
+    content = f"Inscribete ya! {event_day} en {location}. {description}"
+    category = "tour_created"
+    _send_bulk_magicbell_notification(user_emails, title, content, category)
+
+
+def _send_magicbell_notification(user_email, title, content, category):
+    url = "https://api.magicbell.com/broadcasts"
+
+    payload = {
+        "broadcast": {
+            "title": title, 
+            "content": content,
+            "category": category,
+            "action_url": "https://portal.sportsmanage.app/dashboard/invoice/user-list",
+            "recipients": [
+                {
+                    "email": user_email
+                },
+            ]
+        }
+    }
+
+    headers = {
+        "X-MAGICBELL-API-KEY": os.environ.get("MAGICBELL_API_KEY"),
+        "X-MAGICBELL-API-SECRET": os.environ.get("MAGICBELL_API_SECRET"),
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    print(response.json())
+
+def _send_bulk_magicbell_notification(user_emails, title, content, category):
+    url = "https://api.magicbell.com/broadcasts"
+
+    payload = {
+        "broadcast": {
+            "title": title, 
+            "content": content,
+            "category": category,
+            "action_url": "https://portal.sportsmanage.app/dashboard/invoice/user-list",
+            "recipients": [
+                {
+                    "email": email
+                } for email in user_emails
+            ]
+        }
+    }
+
+    headers = {
+        "X-MAGICBELL-API-KEY": os.environ.get("MAGICBELL_API_KEY"),
+        "X-MAGICBELL-API-SECRET": os.environ.get("MAGICBELL_API_SECRET"),
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+    print(response.json())
 
 def get_formatted_notification_field(field):
     if field["name"] == "due_date":
@@ -1293,6 +1377,7 @@ def _map_user(item):
     item["emergencyContactName"] = item.pop("emergency_contact_name", None)
     item["emergencyContactPhoneNumber"] = item.pop("emergency_contact_phone_number", None)
     item["emergencyContactRelationship"] = item.pop("emergency_contact_relationship", None)
+    item["shirtNumber"] = item.pop("shirt_number", None)
     return item
 
 def _map_payment_request(item, get_presigned_url = True):
@@ -1301,8 +1386,7 @@ def _map_payment_request(item, get_presigned_url = True):
     item["status"] = item.pop("payment_status", None)
     item["paymentRequestTo"] = item.pop("payment_request_to", None)
     item["totalAmount"] = item.pop("user_price", None)
-    item["sponsorPrice"] = item.pop("sponsor_price", None)
-    item["sponsorPercentage"] = item.pop("sponsor_percentage", None)
+    item["overduePrice"] = item.pop("overdue_price", None)
     if get_presigned_url:
         item["images"] = [_generate_get_presigned_url(_get_s3_bucket_name(), image) for image in item.get("images", [])]
     return item
@@ -1359,6 +1443,14 @@ def _get_update_expression_and_values(put_item, excluded_keys, custom_mapping_ke
     update_expression = update_expression[:-2]
     return update_expression, values
 
+def _get_users_from_group(group_id):
+    table = _get_user_table()
+    response = table.scan()
+    items = response.get("Items")
+    items = [item for item in items if item.get("user_group") == group_id]
+    active_users = [item for item in items if item.get("user_status") == UserStatus.ACTIVE]
+    return active_users
+
 def map_attribute_key(key, custom_mapping_keys={}):
     if key in custom_mapping_keys:
         return custom_mapping_keys[key]
@@ -1375,6 +1467,15 @@ def try_parsing_date(text):
     except ValueError:
         pass
     raise ValueError('no valid date format found')
+
+def parse_timestamp_to_datetime(timestamp):
+    if timestamp > 10**10:  # If the timestamp is too large, assume it's in milliseconds
+        timestamp /= 1000  
+    return datetime.fromtimestamp(timestamp)
+
+def parse_datetime_to_pretty_es(dt):
+    locale.setlocale(locale.LC_TIME, "es_ES.UTF-8")
+    return dt.strftime("%A, %d de %B de %Y a las %I:%M %p")
     
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8085, reload=True)
