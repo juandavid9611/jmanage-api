@@ -1037,6 +1037,26 @@ def delete_workspace(workspace_id: str):
     table.delete_item(Key={"id": workspace_id})
     return {"deleted_workspace_id": workspace_id}
 
+@app.post("/fix_payment_requests_group", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def fix_payment_requests_group():
+    table = _get_payment_request_table()
+    response = table.scan()
+    items = response.get("Items")
+    fixed_payment_requests = []
+    for item in items:
+        user = item["payment_request_to"]
+        if item.get("user_group") != user["group"]:
+            table.update_item(
+                Key={"id": item["id"]},
+                UpdateExpression="SET user_group = :user_group",
+                ExpressionAttributeValues={
+                    ":user_group": user["group"],
+                    },
+                ReturnValues="ALL_NEW",
+            )
+            fixed_payment_requests.append({"id": item["id"], "concept": item["concept"], "user_group": user["group"], "payment_group": item["user_group"]})
+    return {"fixed_payment_requests": fixed_payment_requests}
+
 def get_notification_fields_changed(old_payment_request, new_payment_request):
     fields_changed = []
     if old_payment_request["due_date"] != new_payment_request["due_date"]:
