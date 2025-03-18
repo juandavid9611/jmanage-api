@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import decimal
 from enum import Enum
 import os
@@ -1493,27 +1493,21 @@ def try_parsing_date(text):
 def parse_timestamp_to_datetime(timestamp):
     if timestamp > 10**10:  # If the timestamp is too large, assume it's in milliseconds
         timestamp /= 1000  
-    return datetime.fromtimestamp(timestamp)
+    bogota_tz = pytz.timezone("America/Bogota")
+    return datetime.fromtimestamp(timestamp, tz=bogota_tz)
 
 def parse_datetime_to_pretty_es(dt):
-    bogota_tz = pytz.timezone('America/Bogota')
-    # Ensure the datetime is timezone-aware
-    if dt.tzinfo is None:
-        # If dt is naive, assume it's already in Bogotá time
-        dt = bogota_tz.localize(dt)
-    elif dt.tzinfo == pytz.utc:
-        # If dt is in UTC, convert it to Bogotá time
-        dt = dt.astimezone(bogota_tz)
     formatted = format_datetime(dt, "EEEE d 'de' MMMM 'de' yyyy '-' h:mm a", locale="es_CO")
 
     # Capitalize the first letter of the day and month
     words = formatted.split()
-    words[0] = words[0].capitalize()  # Capitalize day
-    words[3] = words[3].capitalize()  # Capitalize month
+    if len(words) >= 4:
+        words[0] = words[0].capitalize()  # Capitalize day
+        words[3] = words[3].capitalize()  # Capitalize month
     formatted = " ".join(words)
 
     # Make AM/PM prettier
-    formatted = formatted.replace("a. m.", "AM").replace("p. m.", "PM")  # Change format
+    formatted = formatted.replace("a. m.", "AM").replace("p. m.", "PM")  
 
     return formatted
     
