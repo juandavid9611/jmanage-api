@@ -22,6 +22,7 @@ import requests
 import uvicorn
 import locale
 from babel.dates import format_datetime
+import pytz
 
 
 app = FastAPI()
@@ -1495,6 +1496,11 @@ def parse_timestamp_to_datetime(timestamp):
     return datetime.fromtimestamp(timestamp)
 
 def parse_datetime_to_pretty_es(dt):
+    bogota_tz = pytz.timezone('America/Bogota')
+    if dt.tzinfo is None:
+        dt = bogota_tz.localize(dt)
+    dt = dt.astimezone(bogota_tz)
+    
     return format_datetime(dt, "EEEE d 'de' MMMM 'de' yyyy '-' h:mm a", locale="es_CO")
     
 if __name__ == "__main__":
