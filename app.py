@@ -1499,6 +1499,8 @@ def parse_datetime_to_pretty_es(dt):
     bogota_tz = pytz.timezone('America/Bogota')
     if dt.tzinfo is None:
         dt = bogota_tz.localize(dt)
+    else:
+        dt = dt.astimezone(bogota_tz)  # Convert from UTC (if needed)
     dt = dt.astimezone(bogota_tz)
 
     formatted = format_datetime(dt, "EEEE d 'de' MMMM 'de' yyyy '-' h:mm a", locale="es_CO")
