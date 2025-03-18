@@ -2,6 +2,7 @@
 
 # Exit if any command fails
 set -eux pipefail
+rm -rf lambda_function.zip
 
 pip install -t lib -r requirements.txt
 (cd lib; zip ../lambda_function.zip -r  .)
@@ -12,7 +13,6 @@ zip lambda_function.zip -u auth.py
 
 # Clean up
 rm -rf lib
-rm -rf lambda_function.zip
 
 git add .
 git commit -m "Update lambda function"
