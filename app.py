@@ -1497,12 +1497,13 @@ def parse_timestamp_to_datetime(timestamp):
 
 def parse_datetime_to_pretty_es(dt):
     bogota_tz = pytz.timezone('America/Bogota')
+    # Ensure the datetime is timezone-aware
     if dt.tzinfo is None:
+        # If dt is naive, assume it's already in Bogotá time
         dt = bogota_tz.localize(dt)
-    else:
-        dt = dt.astimezone(bogota_tz)  # Convert from UTC (if needed)
-    dt = dt.astimezone(bogota_tz)
-
+    elif dt.tzinfo == pytz.utc:
+        # If dt is in UTC, convert it to Bogotá time
+        dt = dt.astimezone(bogota_tz)
     formatted = format_datetime(dt, "EEEE d 'de' MMMM 'de' yyyy '-' h:mm a", locale="es_CO")
 
     # Capitalize the first letter of the day and month
