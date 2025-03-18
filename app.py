@@ -21,6 +21,7 @@ import re
 import requests
 import uvicorn
 import locale
+from babel.dates import format_datetime
 
 
 app = FastAPI()
@@ -1494,8 +1495,7 @@ def parse_timestamp_to_datetime(timestamp):
     return datetime.fromtimestamp(timestamp)
 
 def parse_datetime_to_pretty_es(dt):
-    locale.setlocale(locale.LC_TIME, "es_ES.UTF-8")
-    return dt.strftime("%A, %d de %B de %Y a las %I:%M %p")
+    return format_datetime(dt, "EEEE d 'de' MMMM 'de' yyyy '-' h:mm a", locale="es_CO")
     
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8085, reload=True)
