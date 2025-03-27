@@ -1409,6 +1409,9 @@ def _map_payment_request(item, get_presigned_url = True):
     item["paymentRequestTo"] = item.pop("payment_request_to", None)
     item["totalAmount"] = item.pop("user_price", None)
     item["overduePrice"] = item.pop("overdue_price", None)
+    item["group"] = item.pop("user_group", None)
+    item["userId"] = item.pop("user_id", None)
+    item["createdTime"] = item.pop("created_time", None)
     if get_presigned_url:
         item["images"] = [_generate_get_presigned_url(_get_s3_bucket_name(), image) for image in item.get("images", [])]
     return item
