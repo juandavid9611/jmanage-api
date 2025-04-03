@@ -849,12 +849,16 @@ async def create_tour(put_tour: PutTour):
     return _map_tour(item)
 
 @app.get("/tours", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def get_tours(workspace_id: Optional[str] = None):
+async def get_tours(workspace_id: Optional[str] = None, tour_type: Optional[str] = None):
     table = _get_tour_table()
+    calendar_table = _get_calendar_table()
     response = table.scan()
     items = response.get("Items")
     if workspace_id:
         items = [item for item in items if item.get("user_group") == workspace_id]
+    tour_event = calendar_table.get_item(Key={"id": items[0].get("calendar_event_id")})
+    if tour_type:
+        items = [item for item in items if item.get("tour_type") == tour_type]
     mapped_tours = [_map_tour(item) for item in items]
     return mapped_tours
 
