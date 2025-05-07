@@ -155,6 +155,7 @@ class PutTour(BaseModel):
     createdAt: Optional[str] = None
     calendarEventId: Optional[str] = None
     group: Optional[str] = None
+    eventType: Optional[str] = None
 
 class PutWorkspace(BaseModel):
     id: Optional[str] = None
@@ -558,11 +559,10 @@ async def create_calendar_event(put_calendar_event: PutCalendarEvent):
         "create_tour": put_calendar_event.createTour,
         "tour_id": None,
     }
-    if put_calendar_event.createTour:
-        put_tour = _get_tour_from_calendar_event(put_calendar_event)
-        put_tour.calendarEventId = calendar_event_id
-        tour = await create_tour(put_tour)
-        calendar_item["tour_id"] = tour["id"]
+    put_tour = _get_tour_from_calendar_event(put_calendar_event)
+    put_tour.calendarEventId = calendar_event_id
+    tour = await create_tour(put_tour)
+    calendar_item["tour_id"] = tour["id"]
     table.put_item(Item=calendar_item)
     users_from_group = _get_users_from_group(put_calendar_event.group)
     user_emails = [user["email"] for user in users_from_group]
@@ -843,6 +843,7 @@ async def create_tour(put_tour: PutTour):
         "scores": put_tour.scores,
         "created_at": datetime.now().isoformat(),
         "calendar_event_id": put_tour.calendarEventId,
+        "event_type": put_tour.eventType,
         "user_group": put_tour.group,
     }
     table.put_item(Item=item)
@@ -1177,6 +1178,179 @@ def get_top_goals_and_assists(workspace_id: str = Query(None)):
                 top_goals_and_assists[booker_id]["assists"] += booker["assists"]
     return list(top_goals_and_assists.values())
 
+@app.get("/assists_stats", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+def get_assists_stats(user = Depends(get_current_user)):
+    table = _get_tour_table()
+    user_table = _get_user_table()
+    user_db = user_table.get_item(Key={"id": user["sub"]}).get("Item")
+    if not user_db:
+        raise HTTPException(status_code=404, detail=f"User {user['sub']} not found")
+    user_id = user["sub"]
+    response = table.scan()
+    items = response.get("Items")
+    stats = {
+        "match_assists": 0,
+        "total_matches": 0,
+        "match_late_arrives": 0,
+        "training_assists": 0,
+        "total_trainings": 0,
+        "training_late_arrives": 0,
+    }
+    items = [item for item in items if item.get("user_group") == user_db["user_group"]]
+    for item in items:
+        if item.get("event_type") == "match":
+            stats["total_matches"] += 1
+        elif item.get("event_type") == "training":
+            stats["total_trainings"] += 1
+        bookers = item.get("bookers", {})
+        if user_id in bookers:
+            if item.get("event_type") == "match" and bookers[user_id].get("approved", False):
+                stats["match_assists"] += 1
+                stats["match_late_arrives"] += 1 if bookers[user_id]["late"] else 0
+            elif item.get("event_type") == "training" and bookers[user_id].get("approved", False):
+                stats["training_assists"] += 1
+                stats["training_late_arrives"] += 1 if bookers[user_id]["late"] else 0
+    response = [
+        {
+            'id': 'Partidos',
+            'coverUrl': 'public/assets/images/about/testimonials.webp',
+            'title': 'Partidos', 
+            'current': stats["match_assists"],
+            'total': stats["total_matches"], 
+            'late_arrives': stats["match_late_arrives"]
+        },
+        {
+            'id': 'Entrenamientos', 
+            'coverUrl': 'public/assets/images/about/vision.webp',
+            'title': 'Entrenamientos', 
+            'current': stats["training_assists"],
+            'total': stats["total_trainings"], 
+            'late_arrives': stats["training_late_arrives"]
+        }
+    ]
+    return response
+
+@app.post("/set_tours_event_type", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def set_tours_event_type():
+    table = _get_tour_table()
+    calendar_table = _get_calendar_table()
+    response = table.scan()
+    items = response.get("Items")
+    for item in items:
+        if not item.get("event_type"):
+            calendar_event_id = item.get("calendar_event_id")
+            calendar_event = calendar_table.get_item(Key={"id": calendar_event_id}).get("Item")
+            table.update_item(
+                Key={"id": item["id"]},
+                UpdateExpression="SET event_type = :event_type",
+                ExpressionAttributeValues={
+                    ":event_type": calendar_event["category"],
+                    },
+                ReturnValues="ALL_NEW",
+            )
+    return {"message": "Tours event type set"}
+
+@app.post("/create_missing_tours", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def create_missing_tours():
+    calendar_table = _get_calendar_table()
+    response = calendar_table.scan()
+    items = response.get("Items")
+    created_events = []
+    not_created_items = [item for item in items if not item.get("create_tour", False)]
+    for item in not_created_items:
+        event = _map_calendar_event(item)
+        put_calendar_event = PutCalendarEvent(
+            id=event['id'],
+            allDay=event['allDay'],
+            color=event['color'],
+            location=event['location'],
+            description=event['description'],
+            start=event['start'],
+            end=event['end'],
+            title=event['title'],
+            category=event['category'],
+            createTour=True,
+            group=event['group']
+        )
+        put_tour = _get_tour_from_calendar_event(put_calendar_event)
+        participants = event.get("participants", {})
+        bookers = {}
+        if participants:
+            for participant in participants:
+                bookers[participant] = {
+                    "id": participant,
+                    "name": participants[participant],
+                    "avatarUrl": None,
+                    "approved": True,
+                    "late": False,
+                    "yellowCard": False,
+                    "redCard": False,
+                    "mvp": False,
+                    "goals": 0,
+                    "assists": 0,
+                }
+        put_tour.bookers = bookers
+        put_tour.calendarEventId = put_calendar_event.id
+        tour = await create_tour(put_tour)
+        calendar_table.update_item(
+            Key={"id": put_calendar_event.id},
+            UpdateExpression="SET tour_id = :tour_id, create_tour = :create_tour",
+        ExpressionAttributeValues={":tour_id": tour["id"], ":create_tour": True},
+            ReturnValues="ALL_NEW",
+        )
+        created_events.append(item)
+    return {"created_events": created_events}
+
+@app.post("/create_missing_tour", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def create_missing_tour(calendar_event_id):
+    calendar_table = _get_calendar_table()
+    response = calendar_table.get_item(Key={"id": calendar_event_id})
+    item = response.get("Item")
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Calendar event {calendar_event_id} not found")
+    event = _map_calendar_event(item)
+    put_calendar_event = PutCalendarEvent(
+        id=event['id'],
+        allDay=event['allDay'],
+        color=event['color'],
+        location=event['location'],
+        description=event['description'],
+        start=event['start'],
+        end=event['end'],
+        title=event['title'],
+        category=event['category'],
+        createTour=True,
+        group=event['group']
+    )
+    put_tour = _get_tour_from_calendar_event(put_calendar_event)
+    participants = event.get("participants", {})
+    bookers = {}
+    if participants:
+        for participant in participants:
+            bookers[participant] = {
+                "id": participant,
+                "name": participants[participant],
+                "avatarUrl": None,
+                "approved": True,
+                "late": False,
+                "yellowCard": False,
+                "redCard": False,
+                "mvp": False,
+                "goals": 0,
+                "assists": 0,
+            }
+    put_tour.bookers = bookers
+    put_tour.calendarEventId = put_calendar_event.id
+    tour = await create_tour(put_tour)
+    calendar_table.update_item(
+        Key={"id": put_calendar_event.id},
+        UpdateExpression="SET tour_id = :tour_id, create_tour = :create_tour",
+        ExpressionAttributeValues={":tour_id": tour["id"], ":create_tour": True},
+        ReturnValues="ALL_NEW",
+    )
+    return {"created_event": item}
+    
+
 def send_payment_request_update_notification(user_email, user_name, concept, fields_changed):
     response = courier_client.send_message(
         message={
@@ -1316,8 +1490,14 @@ def _get_tour_from_calendar_event(put_calendar_event: PutCalendarEvent):
         services.append("Vittoria Masculino")
     if put_calendar_event.group == "female":
         services.append("Vittoria Femenino")
+    services.append(put_calendar_event.category)
+    title = put_calendar_event.title
+    if put_calendar_event.category == "training":
+        event_datetime = parse_timestamp_to_datetime(put_calendar_event.start)
+        event_day = parse_datetime_to_pretty_es(event_datetime)
+        title = f"Entrenamiento {event_day}"
     put_tour = PutTour(
-        name=put_calendar_event.title,
+        name=title,
         images=[],
         publish="draft",
         services=services,
@@ -1332,6 +1512,7 @@ def _get_tour_from_calendar_event(put_calendar_event: PutCalendarEvent):
         location=put_calendar_event.location,
         scores={"home": 0, "away": 0},
         calendarEventId=put_calendar_event.id,
+        eventType=put_calendar_event.category,
         group=put_calendar_event.group
     )
     return put_tour
@@ -1436,6 +1617,7 @@ def _map_tour(item):
     item["tourGuides"] = item.pop("tour_guides", None)
     item["location"] = item.pop("event_location", None)
     item["calendarEventId"] = item.pop("calendar_event_id", None)
+    item["eventType"] = item.pop("event_type", None)
     item["group"] = item.pop("user_group", None)
     item["images"] = [_get_s3_public_url(_get_s3_bucket_name(), image) for image in item.get("images", [])]
     return item
