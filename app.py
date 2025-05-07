@@ -1213,7 +1213,7 @@ def get_assists_stats(user = Depends(get_current_user)):
     response = [
         {
             'id': 'Partidos',
-            'coverUrl': 'public/assets/images/about/testimonials.webp',
+            'coverUrl': 'assets/images/about/testimonials.webp',
             'title': 'Partidos', 
             'current': stats["match_assists"],
             'total': stats["total_matches"], 
@@ -1221,7 +1221,7 @@ def get_assists_stats(user = Depends(get_current_user)):
         },
         {
             'id': 'Entrenamientos', 
-            'coverUrl': 'public/assets/images/about/vision.webp',
+            'coverUrl': 'assets/images/about/vision.webp',
             'title': 'Entrenamientos', 
             'current': stats["training_assists"],
             'total': stats["total_trainings"], 

@@ -15,5 +15,5 @@ zip lambda_function.zip -u auth.py
 rm -rf lib
 
 git add .
-git commit -m "Fix timezone on events notifications"
+git commit -m "Added assits and scripts for old events. Fix images routes"
 git push
