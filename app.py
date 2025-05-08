@@ -1250,6 +1250,44 @@ def set_tours_event_type():
             )
     return {"message": "Tours event type set"}
 
+@app.post("/set_services_group", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def set_services_group():
+    table = _get_tour_table()
+    response = table.scan()
+    items = response.get("Items")
+    fixed_items = []
+    for item in items:
+        services = item.get("services", [])
+        if not item.get("event_type") in services:
+            services.append(item.get("event_type"))
+        table.update_item(
+            Key={"id": item["id"]},
+            UpdateExpression="SET services = :services",
+            ExpressionAttributeValues={
+                ":services": services,
+                },
+            ReturnValues="ALL_NEW",
+        )
+        fixed_items.append({"id": item["id"], "services": services})
+    return {"fixed_items": fixed_items}
+
+@app.get("/get_missing_tours_from_calendar_events", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def get_missing_tours_from_calendar_events():
+    calendar_table = _get_calendar_table()
+    tour_table = _get_tour_table()
+    calendar_response = calendar_table.scan()
+    tour_response = tour_table.scan()
+    calendar_items = calendar_response.get("Items")
+    tour_items = tour_response.get("Items")
+    missing_tours = []
+    for item in calendar_items:
+        if item.get("create_tour", False) and not item.get("tour_id"):
+            tour = next((tour for tour in tour_items if tour["calendar_event_id"] == item["id"]), None)
+            if not tour:
+                missing_tours.append(item)
+    return {"missing_tours": missing_tours}
+
+
 @app.post("/create_missing_tours", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_missing_tours():
     calendar_table = _get_calendar_table()
