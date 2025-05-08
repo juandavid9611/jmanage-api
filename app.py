@@ -1231,6 +1231,57 @@ def get_assists_stats(user = Depends(get_current_user)):
     ]
     return response
 
+@app.get("/user_assists_stats", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+def get_assists_stats(user_id: str):
+    table = _get_tour_table()
+    user_table = _get_user_table()
+    user_db = user_table.get_item(Key={"id": user_id}).get("Item")
+    if not user_db:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+    response = table.scan()
+    items = response.get("Items")
+    stats = {
+        "match_assists": 0,
+        "total_matches": 0,
+        "match_late_arrives": 0,
+        "training_assists": 0,
+        "total_trainings": 0,
+        "training_late_arrives": 0,
+    }
+    items = [item for item in items if item.get("user_group") == user_db["user_group"]]
+    for item in items:
+        if item.get("event_type") == "match":
+            stats["total_matches"] += 1
+        elif item.get("event_type") == "training":
+            stats["total_trainings"] += 1
+        bookers = item.get("bookers", {})
+        if user_id in bookers:
+            if item.get("event_type") == "match" and bookers[user_id].get("approved", False):
+                stats["match_assists"] += 1
+                stats["match_late_arrives"] += 1 if bookers[user_id]["late"] else 0
+            elif item.get("event_type") == "training" and bookers[user_id].get("approved", False):
+                stats["training_assists"] += 1
+                stats["training_late_arrives"] += 1 if bookers[user_id]["late"] else 0
+    response = [
+        {
+            'id': 'Partidos',
+            'coverUrl': 'assets/images/about/testimonials.webp',
+            'title': 'Partidos', 
+            'current': stats["match_assists"],
+            'total': stats["total_matches"], 
+            'late_arrives': stats["match_late_arrives"]
+        },
+        {
+            'id': 'Entrenamientos', 
+            'coverUrl': 'assets/images/about/vision.webp',
+            'title': 'Entrenamientos', 
+            'current': stats["training_assists"],
+            'total': stats["total_trainings"], 
+            'late_arrives': stats["training_late_arrives"]
+        }
+    ]
+    return response
+
 @app.post("/set_tours_event_type", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 def set_tours_event_type():
     table = _get_tour_table()
