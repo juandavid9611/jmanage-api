@@ -556,9 +556,10 @@ async def create_calendar_event(put_calendar_event: PutCalendarEvent):
         "category": put_calendar_event.category,
         "participants": {},
         "user_group": put_calendar_event.group,
-        "create_tour": put_calendar_event.createTour,
+        "create_tour": True,
         "tour_id": None,
     }
+    # TODO: Check CREATE_TOUR behavior
     put_tour = _get_tour_from_calendar_event(put_calendar_event)
     put_tour.calendarEventId = calendar_event_id
     tour = await create_tour(put_tour)
@@ -1281,10 +1282,9 @@ async def get_missing_tours_from_calendar_events():
     tour_items = tour_response.get("Items")
     missing_tours = []
     for item in calendar_items:
-        if item.get("create_tour", False) and not item.get("tour_id"):
-            tour = next((tour for tour in tour_items if tour["calendar_event_id"] == item["id"]), None)
-            if not tour:
-                missing_tours.append(item)
+        tour = next((tour for tour in tour_items if tour["calendar_event_id"] == item["id"]), None)
+        if not tour:
+            missing_tours.append(item)
     return {"missing_tours": missing_tours}
 
 
