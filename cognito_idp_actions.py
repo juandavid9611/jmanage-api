@@ -194,8 +194,19 @@ class CognitoIdentityProviderWrapper:
         :return: The list of users.
         """
         try:
-            response = self.cognito_idp_client.list_users(UserPoolId=self.user_pool_id)
-            users = response["Users"]
+            users = []
+            next_page = None
+            while True:
+                if next_page is None:
+                    response = self.cognito_idp_client.list_users(UserPoolId=self.user_pool_id)
+                else:
+                    response = self.cognito_idp_client.list_users(
+                        UserPoolId=self.user_pool_id, PaginationToken=next_page
+                    )
+                users.extend(response["Users"])
+                next_page = response.get("PaginationToken", None)
+                if next_page is None:
+                    break
         except ClientError as err:
             logger.error(
                 "Couldn't list users for %s. Here's why: %s: %s",
@@ -231,6 +242,27 @@ class CognitoIdentityProviderWrapper:
             raise
         else:
             return response
+        
+    # snippet-end:[python.example_code.cognito-idp.AdminDeleteUser]
+    def delete_user(self, user_name):
+        """
+        Deletes a user from the user pool.
+
+        :param user_name: The name of the user to delete.
+        """
+        try:
+            self.cognito_idp_client.admin_delete_user(
+                UserPoolId=self.user_pool_id, Username=user_name
+            )
+        except ClientError as err:
+            logger.error(
+                "Couldn't delete user %s. Here's why: %s: %s",
+                user_name,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise
+
 
     # snippet-start:[python.example_code.cognito-idp.AdminInitiateAuth]
     def start_sign_in(self, user_name, password):
@@ -547,3 +579,41 @@ class CognitoIdentityProviderWrapper:
 
 
 # snippet-end:[python.example_code.cognito-idp.CognitoIdentityProviderWrapper.full]
+
+    def disable_user(self, user_name):
+        """
+        Disables a user from the user pool.
+
+        :param user_name: The name of the user to disable.
+        """
+        try:
+            self.cognito_idp_client.admin_disable_user(
+                UserPoolId=self.user_pool_id, Username=user_name
+            )
+        except ClientError as err:
+            logger.error(
+                "Couldn't disable user %s. Here's why: %s: %s",
+                user_name,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise
+    
+    def enable_user(self, user_name):
+        """
+        Enables a user from the user pool.
+
+        :param user_name: The name of the user to enable.
+        """
+        try:
+            self.cognito_idp_client.admin_enable_user(
+                UserPoolId=self.user_pool_id, Username=user_name
+            )
+        except ClientError as err:
+            logger.error(
+                "Couldn't enable user %s. Here's why: %s: %s",
+                user_name,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise

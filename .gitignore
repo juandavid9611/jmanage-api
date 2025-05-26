@@ -1,3 +1,6 @@
 .venv
 lambda_function.zip
 lib
+.env
+.vscode
+.DS_Store
