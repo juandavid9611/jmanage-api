@@ -1201,7 +1201,6 @@ def get_assists_stats(user_id: str):
     user_db = user_table.get_item(Key={"id": user_id}).get("Item")
     if not user_db:
         raise HTTPException(status_code=404, detail=f"User {user_id} not found")
-        )
     stats = {
         "match_assists": 0,
         "total_matches": 0,
