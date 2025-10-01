@@ -1,29 +1,26 @@
 from datetime import datetime, timezone
-import decimal
 from enum import Enum
-import os
-import time
 from typing import Optional, Union
 from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
-import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from mangum import Mangum
 from fastapi.middleware.cors import CORSMiddleware
 from JWTBearer import JWTBearer
 from auth import PermissionChecker, get_current_user, jwks
 from cognito_idp_actions import CognitoIdentityProviderWrapper
 from trycourier import Courier
-import locale
-from typing import List
-import re
+from babel.dates import format_datetime
 import requests
 import uvicorn
+import decimal
 import locale
-from babel.dates import format_datetime
+import boto3
 import pytz
-
+import time
+import re
+import os
 
 app = FastAPI()
 
@@ -177,10 +174,13 @@ async def root():
 @app.get("/users", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_users(workspace_id: str = Query(None), include_disabled: bool = False):
     table = _get_user_table()
-    response = table.scan()
-    items = response.get("Items")
     if workspace_id:
-        items = [item for item in items if item.get("user_group") == workspace_id]
+        items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(workspace_id)
+        )
+    else:
+        items = _scan_all(table)
     if not include_disabled:
         items = [item for item in items if item.get("user_status") == UserStatus.ACTIVE]
     cog_users = cog_wrapper.list_users()
@@ -340,8 +340,8 @@ async def delete_user(user_id: str):
 @app.get("/payment_requests", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_payment_requests(user_id: Optional[str] = None, workspace_id: Optional[str] = None):
     items_mapped = []
+    table = _get_payment_request_table()
     if user_id:
-        table = _get_payment_request_table()
         response = table.query(
             IndexName="user_index",
             KeyConditionExpression=Key("user_id").eq(user_id)
@@ -351,18 +351,16 @@ async def get_payment_requests(user_id: Optional[str] = None, workspace_id: Opti
         return items_mapped
     
     if workspace_id:
-        table = _get_payment_request_table()
-        response = table.scan()
-        items = response.get("Items")
-        items_mapped = [_map_payment_request(item, False) for item in items if item.get("user_group") == workspace_id]
+        items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(workspace_id)
+        )
+        items_mapped = [_map_payment_request(item, False) for item in items]
         return items_mapped
     
-    table = _get_payment_request_table()
-    response = table.scan()
-    items = response.get("Items")
+    items = _scan_all(table)
     items_mapped = [_map_payment_request(item, False) for item in items]
     return items_mapped
-
 
 @app.get("/payment_requests/{payment_request_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_payment_request(payment_request_id: str):
@@ -488,9 +486,11 @@ async def update_user_metrics(user_id: str, put_user_metrics: PutUserMetrics):
 @app.get("/users/{user_id}/late_arrives", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_late_arrives(user_id: str):
     table = _get_user_table()
-    response = table.scan()
-    items = response.get("Items")
-    items = [item for item in items if item['user_status'] == UserStatus.ACTIVE]
+    items = _scan_all(
+            table,
+            FilterExpression=Attr("user_status").eq(UserStatus.ACTIVE),
+            # Puedes añadir ProjectionExpression si quieres limitar columnas
+        )
     cog_users = cog_wrapper.list_users()
     users_mapped = map_users(items, cog_users)
     late_arrives = []
@@ -510,33 +510,16 @@ async def get_late_arrives(user_id: str):
             late_arrives.append(late_arrive)
     return late_arrives
 
-@app.post("/set_default_late_arrives", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
-async def set_default_late_arrives():
-    table = _get_user_table()
-    response = table.scan()
-    items = response.get("Items")
-    for item in items:
-        user_metrics = item.get("user_metrics")
-        if user_metrics:
-            user_metrics["puntaje_asistencia"] = 3
-            user_metrics["puntaje_asistencia_description"] = "No tienes faltas ni llegadas tarde"
-            table.update_item(
-                Key={"id": item["id"]},
-                UpdateExpression="SET user_metrics = :user_metrics",
-                ExpressionAttributeValues={
-                    ":user_metrics": user_metrics,
-                    },
-                ReturnValues="ALL_NEW",
-            )
-    return {"message": "Default late arrives set"}
-
 @app.get("/calendar")
 async def get_calendar(workspace_id: str = Query(None)):
     table = _get_calendar_table()
-    response = table.scan()
-    items = response.get("Items")
     if workspace_id:
-        items = [item for item in items if item.get("user_group") == workspace_id]
+        items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(workspace_id)
+        )
+    else:
+        items = _scan_all(table)
     mapped_events = [_map_calendar_event(item) for item in items]
     return mapped_events
 
@@ -722,44 +705,15 @@ async def process_overdue_request_payments():
 @app.post("/send_christmas_notification", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def send_massive_christmas_notification():
     table = _get_user_table()
-    response = table.scan()
-    items = response.get("Items")
+    items = _scan_all(
+            table,
+            FilterExpression=Attr("user_status").eq(UserStatus.ACTIVE),
+            # Puedes añadir ProjectionExpression si quieres limitar columnas
+        )
     for item in items:
         user_email = item["email"]
         user_name = item["user_name"]
         send_christmas_notification(user_email, user_name)
-
-@app.get("/bioimpedance", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
-async def get_bioimpedance():
-    response = [
-        {
-            "date": "2024-01-01T00:00:00.000Z",
-            "user_id": "a1b2c3",
-            "user_name": "Juan Perez",
-            "peso": 70,
-            "grasa_corporal": 20,
-            "masa_muscular": 50,
-            "grasa_visceral": 10,
-            "agua": 60,
-            "edad_metabolica": 30,
-            "resistencia_1": 500,
-            "resistencia_2": 1000,
-        },
-        {
-            "date": "2024-01-01T00:00:00.000Z",
-            "user_id": "a1b2c3",
-            "user_name": "Isela Creyo",
-            "peso": 70,
-            "grasa_corporal": 20,
-            "masa_muscular": 50,
-            "grasa_visceral": 10,
-            "agua": 60,
-            "edad_metabolica": 30,
-            "resistencia_1": 500,
-            "resistencia_2": 1000,
-        },
-    ]
-    return response
 
 @app.post("/payment_requests/{payment_request_id}/generate-presigned-urls", dependencies=[Depends(PermissionChecker(required_permissions=['user', 'admin']))])
 async def generate_payment_request_presigned_urls(payment_request_id: str, files: list, user = Depends(get_current_user)):
@@ -853,12 +807,14 @@ async def create_tour(put_tour: PutTour):
 @app.get("/tours", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_tours(workspace_id: Optional[str] = None, tour_type: Optional[str] = None):
     table = _get_tour_table()
-    calendar_table = _get_calendar_table()
-    response = table.scan()
-    items = response.get("Items")
     if workspace_id:
-        items = [item for item in items if item.get("user_group") == workspace_id]
-    tour_event = calendar_table.get_item(Key={"id": items[0].get("calendar_event_id")})
+        items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(workspace_id),
+            # Puedes añadir ProjectionExpression si quieres limitar columnas
+        )
+    else:
+        items = _scan_all(table)
     if tour_type:
         items = [item for item in items if item.get("tour_type") == tour_type]
     mapped_tours = [_map_tour(item) for item in items]
@@ -1158,9 +1114,14 @@ def send_payment_request_creation_push_notification(user_id):
 @app.get("/top_goals_and_assists")
 def get_top_goals_and_assists(workspace_id: str = Query(None)):
     table = _get_tour_table()
-    response = table.scan()
-    items = response.get("Items")
-    items = [item for item in items if item.get("user_group") == workspace_id]
+    if workspace_id:
+        items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(workspace_id),
+            # Puedes añadir ProjectionExpression si quieres limitar columnas
+        )
+    else:
+        items = _scan_all(table)
     top_goals_and_assists = {}
     for item in items:
         bookers = item.get("bookers", {})
@@ -1180,15 +1141,13 @@ def get_top_goals_and_assists(workspace_id: str = Query(None)):
     return list(top_goals_and_assists.values())
 
 @app.get("/assists_stats", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-def get_assists_stats(user = Depends(get_current_user)):
+def get_assists_stats_from_token_user(user = Depends(get_current_user)):
     table = _get_tour_table()
     user_table = _get_user_table()
     user_db = user_table.get_item(Key={"id": user["sub"]}).get("Item")
     if not user_db:
         raise HTTPException(status_code=404, detail=f"User {user['sub']} not found")
     user_id = user["sub"]
-    response = table.scan()
-    items = response.get("Items")
     stats = {
         "match_assists": 0,
         "total_matches": 0,
@@ -1197,7 +1156,11 @@ def get_assists_stats(user = Depends(get_current_user)):
         "total_trainings": 0,
         "training_late_arrives": 0,
     }
-    items = [item for item in items if item.get("user_group") == user_db["user_group"]]
+    items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(user_db["user_group"]),
+            # Puedes añadir ProjectionExpression si quieres limitar columnas
+        )
     for item in items:
         if item.get("event_type") == "match":
             stats["total_matches"] += 1
@@ -1238,8 +1201,7 @@ def get_assists_stats(user_id: str):
     user_db = user_table.get_item(Key={"id": user_id}).get("Item")
     if not user_db:
         raise HTTPException(status_code=404, detail=f"User {user_id} not found")
-    response = table.scan()
-    items = response.get("Items")
+        )
     stats = {
         "match_assists": 0,
         "total_matches": 0,
@@ -1248,7 +1210,10 @@ def get_assists_stats(user_id: str):
         "total_trainings": 0,
         "training_late_arrives": 0,
     }
-    items = [item for item in items if item.get("user_group") == user_db["user_group"]]
+    items = _scan_all(
+            table,
+            FilterExpression=Attr("user_group").eq(user_db["user_group"])
+    )
     for item in items:
         if item.get("event_type") == "match":
             stats["total_matches"] += 1
@@ -1327,10 +1292,8 @@ async def set_services_group():
 async def get_missing_tours_from_calendar_events():
     calendar_table = _get_calendar_table()
     tour_table = _get_tour_table()
-    calendar_response = calendar_table.scan()
-    tour_response = tour_table.scan()
-    calendar_items = calendar_response.get("Items")
-    tour_items = tour_response.get("Items")
+    calendar_items = _scan_all(calendar_table)
+    tour_items = _scan_all(tour_table)
     missing_tours = []
     for item in calendar_items:
         tour = next((tour for tour in tour_items if tour["calendar_event_id"] == item["id"]), None)
@@ -1342,10 +1305,11 @@ async def get_missing_tours_from_calendar_events():
 @app.post("/create_missing_tours", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_missing_tours():
     calendar_table = _get_calendar_table()
-    response = calendar_table.scan()
-    items = response.get("Items")
+    not_created_items = _scan_all(
+        calendar_table,
+        FilterExpression=Attr("create_tour").eq(False)
+    )
     created_events = []
-    not_created_items = [item for item in items if not item.get("create_tour", False)]
     for item in not_created_items:
         event = _map_calendar_event(item)
         put_calendar_event = PutCalendarEvent(
@@ -1750,6 +1714,19 @@ def _get_users_from_group(group_id):
     items = [item for item in items if item.get("user_group") == group_id]
     active_users = [item for item in items if item.get("user_status") == UserStatus.ACTIVE]
     return active_users
+
+def _scan_all(table, **kwargs):
+    items = []
+    start_key = None
+    while True:
+        if start_key:
+            kwargs["ExclusiveStartKey"] = start_key
+        resp = table.scan(**kwargs)
+        items.extend(resp.get("Items", []))
+        start_key = resp.get("LastEvaluatedKey")
+        if not start_key:
+            break
+    return items
 
 def map_attribute_key(key, custom_mapping_keys={}):
     if key in custom_mapping_keys:
