@@ -15,5 +15,5 @@ zip lambda_function.zip -u auth.py
 rm -rf lib
 
 git add .
-git commit -m "Added assits and scripts for old events. Fix images routes"
+git commit -m "Fix full scan problem with memory limit"
 git push
