@@ -20,7 +20,7 @@ auth = JWTBearer(jwks)
 
 async def get_current_user(
     credentials: JWTAuthorizationCredentials = Depends(auth)
-) -> str:
+) -> dict:
     try:
         return credentials.claims # type: ignore
     except KeyError:

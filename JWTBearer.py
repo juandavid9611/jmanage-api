@@ -1,12 +1,12 @@
-from typing import Dict, Optional, List, Union
 
-from fastapi import HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, jwk, JWTError
-from jose.utils import base64url_decode
 from pydantic import BaseModel
+from fastapi import HTTPException
+from jose import jwt, jwk, JWTError
 from starlette.requests import Request
+from jose.utils import base64url_decode
+from typing import Dict, Optional, List, Union
 from starlette.status import HTTP_403_FORBIDDEN
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 JWK = Dict[str, str]
 
@@ -43,7 +43,7 @@ class JWTBearer(HTTPBearer):
         return key.verify(jwt_credentials.message.encode(), decoded_signature)
 
     async def __call__(self, request: Request) -> Optional[JWTAuthorizationCredentials]:
-        credentials: HTTPAuthorizationCredentials = await super().__call__(request)
+        credentials: Optional[HTTPAuthorizationCredentials] = await super().__call__(request)
 
         if credentials:
             if not credentials.scheme == "Bearer":
