@@ -10,9 +10,13 @@ from api.calendar import router as calendar_router
 from api.scheduled import router as scheduled_router
 from api.workspaces import router as workspaces_router
 from api.friendly_scripts import router as friendly_scripts_router
+from core.error_handlers import install_error_handlers
+from core.logging_config import configure_logging
+from core.request_context import RequestContextMiddleware
 from utils.env_utils import _use_mangum
 
 def create_app() -> FastAPI:
+    configure_logging()
     app = FastAPI(title="SportsManagement API", version="7.0.0")
 
     origins = [
@@ -28,6 +32,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"]
     )
+    app.add_middleware(RequestContextMiddleware)
+    install_error_handlers(app)
     
     app.include_router(payments_router)
     app.include_router(calendar_router)
@@ -38,13 +44,23 @@ def create_app() -> FastAPI:
     app.include_router(scheduled_router)
     locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
 
+    @app.get("/health")
+    def health():
+        return {"ok": True}
+
     return app
 
 app = create_app()
 
 if _use_mangum():
-    print('Using Mangum')
     handler = Mangum(app)
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8085, reload=True)
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8085,
+        reload=True,
+        log_config=None,     # 🔹 Desactiva el logger por defecto de Uvicorn
+        access_log=False,    # 🔹 Evita logs duplicados
+    )
