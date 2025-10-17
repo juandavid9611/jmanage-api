@@ -27,7 +27,13 @@ class WorkspaceService:
         user_db = self.user_svc.get(user["sub"])
         if not user_db:
             raise ValueError(f"User {user['sub']} not found")
-        return [item for item in items if item["id"] == user_db["user_group"]]
+        related_items = []
+        for item in items:
+            if user_db.get("user_group", None):
+                raise ValueError(f"User {user['sub']} has no user_group assigned") 
+            if item["id"] == user_db["user_group"]:
+                related_items.append(item)
+        return related_items
 
     def list(self) -> List[Dict[str, Any]]:
         return [item for item in self.repo.list_all()]
