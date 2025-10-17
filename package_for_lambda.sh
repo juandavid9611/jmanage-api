@@ -11,6 +11,7 @@ BUILD_DIR=".lambda_build"
 SRC_DIRS=(
   "api"
   "builders"
+  "core"
   "repositories"
   "services"
   "utils"
@@ -71,7 +72,7 @@ rm -rf "${BUILD_DIR}"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo ">> Commit & push (opcional)"
   git add .
-  git commit -m "feat(logging): JSON structured logs, request-id middleware, centralized error handlers, Lambda-ready" || true
+  git commit -m "feat(logging): Added core to lambda folders" || true
   git push || true
 fi
 
