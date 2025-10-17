@@ -14,7 +14,6 @@ class KeyBuilder:
     def __init__(self, env: str = "dev"):
         self.env = env
 
-    # Generic “bucket folder” helpers
     def user_root(self, user_id: str) -> str:
         return join(self.env, "users", _clean(user_id))
 
@@ -46,7 +45,3 @@ class KeyBuilder:
         {env}/users/{user_id}/profile_photos/{filename}
         """
         return join(self.user_root(user_id), "profile_photos", _clean(filename))
-
-    # Fully generic
-    def under(self, *segments: str) -> str:
-        return join(self.env, *( _clean(s) for s in segments ))

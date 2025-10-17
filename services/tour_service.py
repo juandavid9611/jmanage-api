@@ -66,10 +66,7 @@ class TourService:
         if not updates:
             return self._map_tour(existing)
 
-        # Use your repo.update(...) implementation
         self.repo.update(tour_id, updates)
-
-        # Read-after-write (since your repo.update doesn't return the item)
         new_item = self.repo.get(tour_id)
         if not new_item:
             raise ValueError(f"Tour {tour_id} not found after update.")
@@ -79,16 +76,17 @@ class TourService:
         self.repo.delete(tour_id)
 
     def generate_put_presigned_urls(self, tour_id: str, files: List[Dict]) -> Dict[str, Dict[str, str]]:
+        # TODO failing with multiple files in different calls - check why
         presigned_urls = {}
         tour = self.get(tour_id)
         if not tour:
             raise ValueError(f"Tour {tour_id} not found")
-        user_id = tour["userId"]
+        # TODO Extract into S3Adapter method or other service. Works for payments too
         for file in files:
             if not isinstance(file, dict):
                 raise TypeError("Each file must be a dictionary with 'name' and 'content_type' keys.")
             
-            file_name = file.get("name")
+            file_name = file.get("file_name")
             file_content_type = file.get("content_type")
             if not file_name or not file_content_type:
                 raise ValueError("File 'name' and 'content_type' cannot be empty.")
@@ -158,7 +156,7 @@ class TourService:
             "event_type": item.eventType,
             "user_group": item.group,
     }
-    def _map_tour(self, item: Dict[str, Any], get_presigned_url=False) -> Dict[str, Any]:
+    def _map_tour(self, item: Dict[str, Any], get_presigned_url=True) -> Dict[str, Any]:
         item["name"] = item.pop("tour_name", None)
         item["createdAt"] = item.pop("created_at", None)
         item["tourGuides"] = item.pop("tour_guides", None)
@@ -167,7 +165,7 @@ class TourService:
         item["eventType"] = item.pop("event_type", None)
         item["group"] = item.pop("user_group", None)
         if get_presigned_url:
-            item["images"] = [self.s3.presign_get_from_explicit_key(key=image) for image in item.get("images", [])]
+            item["images"] = [self.s3.get_s3_public_url(key=image) for image in item.get("images", [])]
         return item
 
     def _get_needed_updates(self, item: PutTour) -> Dict[str, Any]:

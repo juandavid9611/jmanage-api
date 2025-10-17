@@ -22,7 +22,6 @@ class TourRepo:
         self._table = tour_table()
         self._user_gsi = os.getenv("TOUR_USER_GSI", "user_index")
 
-    # ------------- Reads -------------
     def get(self, tour_id: str) -> Optional[Dict[str, Any]]:
         resp = self._table.get_item(Key={"id": tour_id})
         return resp.get("Item")
@@ -44,7 +43,6 @@ class TourRepo:
             FilterExpression=Attr("tour_type").eq(tour_type)
         )
 
-    # ------------- Writes -------------
     def put(self, item: Dict[str, Any]) -> None:
         self._table.put_item(Item=item)
 

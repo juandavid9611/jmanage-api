@@ -53,7 +53,7 @@ async def generate_tour_presigned_urls(tour_id: str, files: list, svc: TourServi
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error generating presigned URLs: {str(e)}")
 
-    return {"urls": result["urls"]}
+    return {"urls": result}
 
 @router.post("/{tour_id}/add_images", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def add_tour_images(tour_id: str, file_names: list, svc: TourService = Depends(get_tour_service)):

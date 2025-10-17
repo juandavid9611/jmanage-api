@@ -60,7 +60,7 @@ async def generate_user_presigned_url(user_id: str, files: list, svc: UserServic
         result = svc.generate_presigned_urls(user_id=user_id, files=files)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error generating presigned URLs: {str(e)}")
-    return {"urls": result["urls"]}
+    return {"urls": result}
 
 @router.get("/{user_id}/metrics", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_user_metrics(user_id: str, svc: UserService = Depends(get_user_service)):

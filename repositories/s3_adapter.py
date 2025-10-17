@@ -2,6 +2,7 @@ import os
 import boto3
 from typing import Dict
 from repositories.s3_keys import KeyBuilder
+from utils.env_utils import _env
 
 def _bucket_name() -> str:
     bucket = os.environ.get("BUCKET_NAME")
@@ -9,15 +10,11 @@ def _bucket_name() -> str:
         raise ValueError("BUCKET_NAME environment variable is not set")
     return bucket
 
-def _env() -> str:
-    return os.environ.get("ENV", "dev")
-
 class S3Adapter:
     def __init__(self):
         self._s3 = boto3.client("s3")
         self._kb = KeyBuilder(env=_env())
 
-    # -------- Generic presigners --------
     def _presign_put(
         self,
         *,
@@ -40,7 +37,10 @@ class S3Adapter:
                 ExpiresIn=expires_in,
             )
     
-    # -------- Generic helpers --------
+    def get_s3_public_url(self, key: str) -> str :
+        return f"https://{_bucket_name()}.s3.amazonaws.com/{key}"
+
+
     def presign_get_from_explicit_key(
         self,
         *,
@@ -49,7 +49,6 @@ class S3Adapter:
     ) -> str:
         return self._presign_get(key=key, expires_in=expires_in)
 
-    # -------- Invoices (payment requests) helpers --------
     def presign_invoice_put(
         self,
         *,
@@ -62,7 +61,6 @@ class S3Adapter:
         key = self._kb.invoice_file(user_id, payment_request_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
 
-    # -------- Tours helpers --------
     def presign_tour_image_put(
         self,
         *,
@@ -74,7 +72,6 @@ class S3Adapter:
         key = self._kb.tour_image(tour_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
     
-    # -------- User images helpers --------
     def presign_user_profile_photo_put(
         self,
         *,

@@ -19,11 +19,8 @@ def parse_timestamp_to_datetime(timestamp: Union[Number, str]) -> datetime:
       If you prefer a stricter check, change to > 10**12.
     """
     if isinstance(timestamp, str):
-        # best-effort: strip and cast
         timestamp = float(timestamp.strip())
 
-    # Preserve your original heuristic:
-    # if the number is "too large", assume it's milliseconds
     if timestamp > 10**10:
         timestamp = timestamp / 1000.0
 
@@ -51,14 +48,11 @@ def format_datetime_pretty_es(dt: datetime) -> str:
         locale="es_CO",
     )
 
-    # Capitalize first letter of day and month (keeps your original logic)
     words = formatted.split()
     if len(words) >= 4:
         words[0] = words[0].capitalize()   # Day name
         words[3] = words[3].capitalize()   # Month name
     formatted = " ".join(words)
-
-    # Replace localized AM/PM from 'a. m.' / 'p. m.' to 'AM' / 'PM'
     formatted = formatted.replace("a. m.", "AM").replace("p. m.", "PM")
 
     return formatted

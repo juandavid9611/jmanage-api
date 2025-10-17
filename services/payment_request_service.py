@@ -13,13 +13,14 @@ class PaymentRequestService:
         self.repo = repo
         self.notifier = notifier
         self.s3 = s3
+        #TODO Important! Fix mapping userPrice, user_price, totalAmount
         #TODO Switch to excluded and custom mapping like in TourService
         self._updateable_fields = {
             "createDate", "dueDate", "concept", "description", "category",
             "userGroup", "userPrice", "overduePrice", "status"
         }
         self._relevant_notification_fields = {
-            "due_date", "user_price", "concept", "payment_status"
+            "dueDate", "totalAmount", "concept", "status"
         }
         self._payments_username = "Vittoria CD Pagos"
 
@@ -45,6 +46,7 @@ class PaymentRequestService:
         new_payment_requests = []
         created_time = int(time.time())
         for user in bulk_item.paymentRequestTo:
+            #TODO User URL is create with GET presigned url, should be populated later with a GET user with other attributes
             new_payment_request = self._get_new_payment_request(bulk_item, user, created_time)
             self.repo.put(new_payment_request)
             self.notifier.payment_created(
@@ -58,15 +60,15 @@ class PaymentRequestService:
         return new_payment_requests
 
     def update(self, payment_request_id: str, item: BulkPutPaymentRequest) -> Optional[Dict[str, Any]]:
-        existing = self.repo.get(payment_request_id)
+        existing = self.get(payment_request_id)
         if not existing:
             return None
         updates = self._get_needed_updates(item)
         if not updates:
-            return self._map_payment_request(existing)
+            return existing
         self.repo.update(payment_request_id, updates)
         user = item.paymentRequestTo[0]
-        new_item = self.repo.get(payment_request_id)
+        new_item = self.get(payment_request_id)
         if not new_item:
             raise ValueError(f"Payment Request {payment_request_id} not found after update.")
         notification_fields_changed = self._get_notification_fields_changed(existing, new_item)
@@ -77,7 +79,7 @@ class PaymentRequestService:
                 concept=new_item['concept'], 
                 changes=notification_fields_changed
             )
-        return self._map_payment_request(new_item)
+        return new_item
 
     def delete(self, payment_request_id: str) -> None:
         self.repo.delete(payment_request_id)
@@ -90,13 +92,13 @@ class PaymentRequestService:
         user_id = payment_request["userId"]
         for file in files:
             if not isinstance(file, dict):
-                raise TypeError("Each file must be a dictionary with 'name' and 'content_type' keys.")
-            
-            file_name = file.get("name")
+                raise TypeError("Each file must be a dictionary with 'file_name' and 'content_type' keys.")
+
+            file_name = file.get("file_name")
             file_content_type = file.get("content_type")
             if not file_name or not file_content_type:
-                raise ValueError("File 'name' and 'content_type' cannot be empty.")
-            
+                raise ValueError("File 'file_name' and 'content_type' cannot be empty.")
+
             result = self.s3.presign_invoice_put(
                 user_id=user_id, 
                 payment_request_id=payment_request_id, 
@@ -122,10 +124,10 @@ class PaymentRequestService:
             }
         )
         
-        new_item = self.repo.get(payment_request_id)
+        new_item = self.get(payment_request_id)
         if not new_item:
             raise ValueError(f"Payment Request {payment_request_id} not found after update.")
-        user = existing["payment_request_to"]
+        user = existing["paymentRequestTo"]
         notification_fields_changed = self._get_notification_fields_changed(existing, new_item)
 
         if notification_fields_changed:

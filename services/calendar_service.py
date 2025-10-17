@@ -19,7 +19,7 @@ class CalendarService:
         self.user_svc = user_svc
         self._excluded_fields = ["id", "participants"]
         self._custom_mapping_keys = {"start": "event_start", "end": "event_end", "group": "user_group", "location": "event_location"}
-        self._relevant_tour_fields = {"title", "event_start", "event_end", "event_location"}
+        self._relevant_tour_fields = {"title", "event_start", "event_end", "event_location", "category", "group"}
 
     def get(self, calendar_event_id: str) -> Optional[Dict[str, Any]]:
         item = self.repo.get(calendar_event_id)
@@ -61,9 +61,7 @@ class CalendarService:
         if not new_item:
             raise ValueError(f"Calendar Event {calendar_event_id} not found after update.")
         
-        # Update associated tour if tourId exists
         tour_id = new_item.get("tour_id")
-        # Only update tour if it exists AND relevant fields changed
         if tour_id and self._relevant_changed(existing, new_item, self._relevant_tour_fields):
             attrs = self._tour_attrs_from_event(item)
             self.tour_svc.update_attributes(tour_id, **attrs)
@@ -95,7 +93,6 @@ class CalendarService:
             {"participants": participants}
         )
         
-        # If the event is linked to a tour, update the tour's bookers
         tour_id = existing.get("tour_id")
         if tour_id:
             tour = self.tour_svc.get(tour_id)
@@ -148,7 +145,7 @@ class CalendarService:
             "category": item.category,
             "participants": {},
             "user_group": item.group,
-            "create_tour": item.createTour,
+            "create_tour": True,
             "tour_id": item.tourId,
         }
     
@@ -172,7 +169,6 @@ class CalendarService:
         Uses your pure builder for consistency, but returns only a dict of attrs.
         """
         draft = build_tour_from_calendar_event(evt)
-        # Extract exactly the attributes you want to mirror on the tour
         return {
             "name": draft.name,
             "services": draft.services,

@@ -11,5 +11,5 @@ class InAppSender(Protocol):
     ) -> str: ...
 
     def publish_bulk(
-        self, *, user_ids: list[str], title: str, content: str, category: Optional[str] = None, action_url_path: str = "dashboard/"
+        self, *, user_emails: list[str], title: str, content: str, category: Optional[str] = None, action_url_path: str = "dashboard/"
     ) -> str: ...

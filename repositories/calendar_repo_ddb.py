@@ -22,7 +22,6 @@ class CalendarRepo:
         self._table = calendar_table()
         self._user_gsi = os.getenv("CALENDAR_USER_GSI", "user_index")
 
-    # ------------- Reads -------------
     def get(self, calendar_event_id: str) -> Optional[Dict[str, Any]]:
         resp = self._table.get_item(Key={"id": calendar_event_id})
         return resp.get("Item")
@@ -37,7 +36,6 @@ class CalendarRepo:
             FilterExpression=Attr("user_group").eq(group)
         )
 
-    # ------------- Writes -------------
     def put(self, item: Dict[str, Any]) -> None:
         self._table.put_item(Item=item)
 

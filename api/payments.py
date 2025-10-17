@@ -54,7 +54,7 @@ async def generate_payment_request_presigned_urls(payment_request_id: str, files
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error generating presigned URLs: {str(e)}")
 
-    return {"urls": result["urls"]}
+    return {"urls": result}
 
 #TODO MISSING TESTING
 @router.post("/{payment_request_id}/request_approval", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])

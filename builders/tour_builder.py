@@ -4,7 +4,6 @@ from api.schemas.calendar import PutCalendarEvent
 from api.schemas.tours import PutTour
 from utils.datetime_utils import parse_timestamp_to_datetime, format_datetime_pretty_es
 
-# Map group → service label
 SERVICE_BY_GROUP = {
     "male": "Vittoria Masculino",
     "female": "Vittoria Femenino",

@@ -23,7 +23,6 @@ class PaymentRequestsRepo:
         self._user_gsi = os.getenv("PAYMENT_REQUEST_USER_GSI", "user_index")
         self._status_gsi = os.getenv("PAYMENT_REQUEST_STATUS_GSI", "status_index")
 
-    # ------------- Reads -------------
     def get(self, payment_request_id: str) -> Optional[Dict[str, Any]]:
         resp = self._table.get_item(Key={"id": payment_request_id})
         return resp.get("Item")
@@ -76,7 +75,7 @@ class PaymentRequestsRepo:
             expr_attr_values[placeholder] = value
             expr_attr_names[name_placeholder] = field
         if not update_expr_parts:
-            return  # Nothing to update
+            return
         update_expression = "SET " + ", ".join(update_expr_parts)
         self._table.update_item(
             Key={"id": payment_request_id},

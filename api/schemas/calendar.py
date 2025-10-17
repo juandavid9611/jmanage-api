@@ -3,7 +3,7 @@ from typing import Optional, Union
 
 
 class PutCalendarEvent(BaseModel):
-    id: Optional[str] = None
+    id: str
     allDay: Optional[bool] = None
     color: Optional[str] = None
     location: Optional[str] = None
@@ -13,6 +13,6 @@ class PutCalendarEvent(BaseModel):
     end: Union[int, str]
     title: str
     category: Optional[str]
-    createTour: Optional[bool] = False
+    createTour: Optional[bool] = True
     group: str
     tourId: Optional[str] = None

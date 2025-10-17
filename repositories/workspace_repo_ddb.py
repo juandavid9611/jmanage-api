@@ -22,7 +22,6 @@ class WorkspaceRepo:
         self._table = workspace_table()
         self._user_gsi = os.getenv("WORKSPACE_USER_GSI", "user_index")
 
-    # ------------- Reads -------------
     def get(self, workspace_id: str) -> Optional[Dict[str, Any]]:
         resp = self._table.get_item(Key={"id": workspace_id})
         return resp.get("Item")
@@ -44,9 +43,8 @@ class WorkspaceRepo:
             FilterExpression=Attr("workspace_type").eq(workspace_type)
         )
 
-    # ------------- Writes -------------
     def put(self, item: Dict[str, Any]) -> None:
-        return self._table.put_item(Item=item)
+        self._table.put_item(Item=item)
 
     def update(self, workspace_id: str, updates: Dict[str, Any]) -> None:
         update_expr_parts = []

@@ -26,6 +26,8 @@ class UserService:
     def get(self, user_id: str) -> Optional[Dict[str, Any]]:
         item = self.repo.get(user_id)
         if item:
+            cog_user = self.cog_wrapper.get_user(item["email"])
+            item["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
             return self._map_user(item)
         return None
 
@@ -121,7 +123,7 @@ class UserService:
         file = files[0]
         if not isinstance(file, dict):
             raise TypeError("Each file must be a dictionary with 'name' and 'content_type' keys.")
-        file_name = file.get("name")
+        file_name = file.get("file_name")
         file_content_type = file.get("content_type")
         if not file_name or not file_content_type:
             raise ValueError("File 'name' and 'content_type' cannot be empty.")
@@ -177,16 +179,16 @@ class UserService:
         }
         items = self.tour_svc.list(group=user["group"], tour_type=None)
         for item in items:
-            if item.get("event_type") == "match":
+            if item.get("eventType") == "match":
                 stats["total_matches"] += 1
-            elif item.get("event_type") == "training":
+            elif item.get("eventType") == "training":
                 stats["total_trainings"] += 1
             bookers = item.get("bookers", {})
             if user_id in bookers:
-                if item.get("event_type") == "match" and bookers[user_id].get("approved", False):
+                if item.get("eventType") == "match" and bookers[user_id].get("approved", False):
                     stats["match_assists"] += 1
                     stats["match_late_arrives"] += 1 if bookers[user_id]["late"] else 0
-                elif item.get("event_type") == "training" and bookers[user_id].get("approved", False):
+                elif item.get("eventType") == "training" and bookers[user_id].get("approved", False):
                     stats["training_assists"] += 1
                     stats["training_late_arrives"] += 1 if bookers[user_id]["late"] else 0
         response = [
@@ -226,39 +228,8 @@ class UserService:
                         }
                     top_goals_and_assists[booker_id]["goals"] += booker["goals"]
                     top_goals_and_assists[booker_id]["assists"] += booker["assists"]
-        # Sort by goals first, then by assists
         sorted_top = sorted(top_goals_and_assists.values(), key=lambda x: (x["goals"], x["assists"]), reverse=True)
         return sorted_top
-        
-    
-    # @app.get("/top_goals_and_assists")
-# def get_top_goals_and_assists(workspace_id: str = Query(None)):
-#     table = _get_tour_table()
-#     if workspace_id:
-#         items = _scan_all(
-#             table,
-#             FilterExpression=Attr("user_group").eq(workspace_id),
-#             # Puedes añadir ProjectionExpression si quieres limitar columnas
-#         )
-#     else:
-#         items = _scan_all(table)
-#     top_goals_and_assists = {}
-#     for item in items:
-#         bookers = item.get("bookers", {})
-#         for booker_id in bookers:
-#             booker = bookers[booker_id]
-#             if booker["goals"] > 0 or booker["assists"] > 0:
-#                 if booker_id not in top_goals_and_assists:
-#                     top_goals_and_assists[booker_id] = {
-#                         "id": booker_id,
-#                         "name": booker["name"],
-#                         "avatarUrl": booker["avatarUrl"],
-#                         "goals": 0,
-#                         "assists": 0,
-#                     }
-#                 top_goals_and_assists[booker_id]["goals"] += booker["goals"]
-#                 top_goals_and_assists[booker_id]["assists"] += booker["assists"]
-#     return list(top_goals_and_assists.values())
 
     def _get_new_user(self, item: CreateUser) -> Dict[str, Any]:
         created_time = int(time.time())
@@ -295,11 +266,12 @@ class UserService:
             users.append(user)
         return users
     
-    def _map_user(self, item, get_presigned_url=False) -> Dict[str, Any]:
+    def _map_user(self, item, get_presigned_url=True) -> Dict[str, Any]:
         item["name"] = item.pop("user_name", None)
         item["phoneNumber"] = item.pop("phone_number", None)
-        if get_presigned_url:
-            item["avatarUrl"] = self.s3.presign_get_from_explicit_key(key=item.pop("avatar_url", None))
+        item["avatarUrl"] = item.pop("avatar_url", None)
+        if get_presigned_url and item.get("avatarUrl", None):
+            item["avatarUrl"] = self.s3.presign_get_from_explicit_key(key=item["avatarUrl"])
         item["status"] = item.pop("user_status", None)
         item["group"] = item.pop("user_group", None)
         item["confirmationStatus"] = item.pop("confirmation_status", None)

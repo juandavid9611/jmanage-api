@@ -23,14 +23,14 @@ async def create_calendar_event(
 
     return calendar_item
 
-@router.put("/{calendar_event_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
-async def update_calendar_event(calendar_event_id: str, put_calendar_event: PutCalendarEvent, svc: CalendarService = Depends(get_calendar_service)):
-    existing_item = svc.get(calendar_event_id)
+@router.put("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def update_calendar_event(put_calendar_event: PutCalendarEvent, svc: CalendarService = Depends(get_calendar_service)):
+    existing_item = svc.get(put_calendar_event.id)
     if not existing_item:
-        raise HTTPException(status_code=404, detail=f"Event {calendar_event_id} not found")
+        raise HTTPException(status_code=404, detail=f"Event {put_calendar_event.id} not found")
     
-    svc.update(calendar_event_id, put_calendar_event)
-    return {"updated_event_id": calendar_event_id}
+    svc.update(put_calendar_event.id, put_calendar_event)
+    return {"updated_event_id": put_calendar_event.id}
 
 @router.delete("/{calendar_event_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def delete_calendar_event(calendar_event_id: str, svc: CalendarService = Depends(get_calendar_service)):

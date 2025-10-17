@@ -22,7 +22,6 @@ class UserRepo:
         self._table = user_table()
         self._group_gsi = os.getenv("USER_GROUP_GSI", "group_index")
 
-    # ------------- Reads -------------
     def get(self, user_id: str) -> Optional[Dict[str, Any]]:
         resp = self._table.get_item(Key={"id": user_id})
         return resp.get("Item")
@@ -37,7 +36,6 @@ class UserRepo:
             FilterExpression=Attr("user_group").eq(group)
         )
 
-    # ------------- Writes -------------
     def put(self, item: Dict[str, Any]) -> None:
         self._table.put_item(Item=item)
 

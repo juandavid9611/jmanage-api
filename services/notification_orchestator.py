@@ -5,6 +5,7 @@ from api.schemas.calendar import PutCalendarEvent
 from repositories.notifications.ports import EmailSender
 from repositories.notifications.ports import InAppSender
 from utils.datetime_utils import format_datetime_pretty_es, parse_timestamp_to_datetime, try_parsing_date
+from utils.env_utils import _env
 
 
 class Notifications:
@@ -13,7 +14,6 @@ class Notifications:
     Other services call these methods instead of talking Courier directly.
     """
 
-    # Centralize template IDs here (override via DI/env if you prefer):
     COURIER_TEMPLATE_PAYMENT_CREATED = "AW5D9440CF4MZAH1CHWVA2D0DP4D"
     COURIER_TEMPLATE_PAYMENT_UPDATED = "B12CHAN5364VKVJMHZATM74CD4DE"
     COURIER_TEMPLATE_PAYMENT_OVERDUE = "40AZX1PQRGM3D0QD0R3AZG1P6AAE"
@@ -23,10 +23,14 @@ class Notifications:
     def __init__(self, email_sender: EmailSender, in_app_sender: InAppSender) -> None:
         self._email_sender = email_sender
         self._in_app_sender = in_app_sender
-        self._admin_emails = ["loga9822@hotmail.com", "clubdeportivovittoria+pagos@gmail.com"]
+        if _env() == "prod":
+            self._admin_emails = ["loga9822@hotmail.com", "clubdeportivovittoria+pagos@gmail.com", "jd_rodrigueza@javeriana.edu.co"]
+            self._admin_email_notifications_enabled = True
+        else:
+            self._admin_emails = ["jd_rodrigueza@javeriana.edu.co"]
+            self._admin_email_notifications_enabled = False
         # locale.setlocale(locale.LC_ALL, 'es_CO.UTF-8')  # Set to Colombian Spanish locale
 
-    # Generic escape hatch (rarely needed if you stick to domain methods):
     def _send_email(
         self,
         *,
@@ -68,14 +72,12 @@ class Notifications:
     ) -> str:
 
         return self._in_app_sender.publish_bulk(
-            user_ids=user_emails,
+            user_emails=user_emails,
             title=title,
             content=content,
             category=category,
             action_url_path=action_url_path
         )
-
-    # --- Domain methods ---
 
     def send_user_welcome(self, *, email: str, name: str) -> str:
         return self._send_email(
@@ -133,7 +135,7 @@ class Notifications:
         email: str,
         user_name: str,
         concept: str,
-        changes: list[dict[str, Any]], # TODO define a proper type for this,
+        changes: list[dict[str, Any]],
         notify_admins: bool = False
     ) -> Dict[str, Union[str, Exception]]:
         results: Dict[str, Union[str, Exception]] = {}
@@ -141,14 +143,14 @@ class Notifications:
             data = {
                 "userName": user_name,
                 "concept": concept,
-                "changes": [self._get_formatted_notification_field(field) for field in changes],
+                "changes": [self._get_formatted_notification_field(field) for field in changes]
             }
             results["email"] = self._send_email(
                 template_id=self.COURIER_TEMPLATE_PAYMENT_UPDATED,
                 to_email=email,
                 data=data,
             )
-            if notify_admins:
+            if notify_admins and self._admin_email_notifications_enabled:
                 for admin_email in self._admin_emails:
                     self._send_email(
                         template_id=self.COURIER_TEMPLATE_PAYMENT_UPDATED,
@@ -177,8 +179,8 @@ class Notifications:
     ) -> Dict[str, Union[str, Exception]]:
         results: Dict[str, Union[str, Exception]] = {}
         for payment in overdue_payments:
-            email = payment["payment_request_to"]["email"]
-            name = payment["payment_request_to"]["name"]
+            email = payment["to_email"]
+            name = payment["to_name"]
             try:
                 results[f"in_app_{email}"] = self._send_in_app_notification(
                     user_email=email,
@@ -200,18 +202,19 @@ class Notifications:
                 )
             except Exception as e:
                 results[f"email_{email}"] = e
-        for email in self._admin_emails:
-            try:
-                self._send_email(
-                    template_id=self.COURIER_TEMPLATE_PAYMENT_OVERDUE,
-                    to_email=email,
-                    data={
-                        "userName": user_name,
-                        "overduePaymentRequests": overdue_payments,
-                    },
-                )
-            except Exception as e:
-                results[email] = e
+        if self._admin_email_notifications_enabled:
+            for email in self._admin_emails:
+                try:
+                    self._send_email(
+                        template_id=self.COURIER_TEMPLATE_PAYMENT_OVERDUE,
+                        to_email=email,
+                        data={
+                            "userName": user_name,
+                            "overduePaymentRequests": overdue_payments,
+                        },
+                    )
+                except Exception as e:
+                    results[email] = e
         return results
 
     def calendar_event_created(self, *, user_emails: list[str], calendar_event: PutCalendarEvent) -> str:
@@ -230,17 +233,17 @@ class Notifications:
         )
     
     def _get_formatted_notification_field(self, field):
-        if field["name"] == "due_date":
+        if field["name"] == "dueDate":
             old_value = try_parsing_date(field["old_value"])
             old_value = old_value.strftime("%d/%m/%Y")
             new_value = try_parsing_date(field["new_value"])
             new_value = new_value.strftime("%d/%m/%Y")
             return {"name": "Fecha de vencimiento", "old_value": old_value, "new_value": new_value}
-        if field["name"] == "user_price":
+        if field["name"] == "totalAmount":
             return {"name": "Valor", "old_value": locale.currency(field["old_value"], grouping=True), "new_value": locale.currency(field["new_value"], grouping=True)}
         if field["name"] == "concept":
             return {"name": "Concepto", "old_value": field["old_value"], "new_value": field["new_value"]}
-        if field["name"] == "payment_status":
+        if field["name"] == "status":
             english_to_spanish_status = {
                 "paid": "Pagado",
                 "pending": "Pendiente",
