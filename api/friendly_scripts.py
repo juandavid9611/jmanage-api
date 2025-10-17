@@ -1,6 +1,6 @@
 from di import get_user_service
 from auth import PermissionChecker, get_current_user
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from services.user_service import UserService
 
 
@@ -26,3 +26,7 @@ async def get_assists_stats(user_id: str, svc: UserService = Depends(get_user_se
 @router.get("/top_goals_and_assists", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_top_goals_and_assists(workspace_id: str = Query(None), svc: UserService = Depends(get_user_service)):
     return svc.get_top_goals_and_assists(workspace_id)
+
+@router.get("/raise_error", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def raise_error():
+    raise HTTPException(status_code=500, detail="This is a test error for monitoring purposes.")

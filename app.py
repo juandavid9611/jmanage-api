@@ -43,11 +43,6 @@ def create_app() -> FastAPI:
     app.include_router(friendly_scripts_router)
     app.include_router(scheduled_router)
     locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
-
-    @app.get("/health")
-    def health():
-        return {"ok": True}
-
     return app
 
 app = create_app()
