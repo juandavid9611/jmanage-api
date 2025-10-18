@@ -29,9 +29,9 @@ class WorkspaceService:
             raise ValueError(f"User {user['sub']} not found")
         related_items = []
         for item in items:
-            if user_db.get("user_group", None):
-                raise ValueError(f"User {user['sub']} has no user_group assigned") 
-            if item["id"] == user_db["user_group"]:
+            if user_db.get("group") is None:
+                raise ValueError(f"User {user['sub']} has no group assigned") 
+            if item["id"] == user_db["group"]:
                 related_items.append(item)
         return related_items
 
