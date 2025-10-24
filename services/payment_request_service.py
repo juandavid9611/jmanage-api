@@ -1,4 +1,4 @@
-import time
+from time import time
 from uuid import uuid4
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -44,7 +44,7 @@ class PaymentRequestService:
             raise ValueError("No users provided for payment request creation.")
 
         new_payment_requests = []
-        created_time = int(time.time())
+        created_time = int(time())
         for user in bulk_item.paymentRequestTo:
             #TODO User URL is create with GET presigned url, should be populated later with a GET user with other attributes
             new_payment_request = self._get_new_payment_request(bulk_item, user, created_time)

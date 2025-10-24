@@ -72,7 +72,7 @@ rm -rf "${BUILD_DIR}"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo ">> Commit & push (opcional)"
   git add .
-  git commit -m "Fix user_group in workspaces" || true
+  git commit -m "Fix time() in user creation" || true
   git push || true
 fi
 

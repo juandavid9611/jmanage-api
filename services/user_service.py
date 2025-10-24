@@ -232,7 +232,7 @@ class UserService:
         return sorted_top
 
     def _get_new_user(self, item: CreateUser) -> Dict[str, Any]:
-        created_time = int(time.time())
+        created_time = int(time())
 
         return {
             "id": item.id,
