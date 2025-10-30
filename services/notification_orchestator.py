@@ -218,7 +218,8 @@ class Notifications:
                 except Exception as e:
                     results[email] = e
         try:
-            send_overdue_summary(user_name=user_name, overdue_payments=overdue_payments)
+            print("Sending Slack summary...")
+            send_overdue_summary(user_name=user_name, pending_count=pending_count, overdue_payments=overdue_payments)
             results["slack_summary"] = "sent"
         except Exception as e:
             results["slack_summary"] = e
