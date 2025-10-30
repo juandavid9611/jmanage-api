@@ -1,18 +1,20 @@
 from pydantic import BaseModel
-from typing import Optional, Union
 
 
 class PutCalendarEvent(BaseModel):
     id: str
-    allDay: Optional[bool] = None
-    color: Optional[str] = None
-    location: Optional[str] = None
-    description: Optional[str]
+    allDay: bool | None = None
+    color: str | None = None
+    location: str | None = None
+    description: str | None
     # TODO start and end can be int (timestamp) or str (ISO format)
-    start: int
-    end: Union[int, str]
+    start: int | str
+    end: int | str
     title: str
-    category: Optional[str]
-    createTour: Optional[bool] = True
+    category: str | None
+    createTour: bool | None = True
     group: str
-    tourId: Optional[str] = None
+    tourId: str | None = None
+
+class ParticipationRequest(BaseModel):
+    value: bool

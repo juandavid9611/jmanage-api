@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.schemas.calendar import PutCalendarEvent
+from api.schemas.calendar import ParticipationRequest, PutCalendarEvent
 from auth import PermissionChecker, get_current_user
 from di import get_calendar_service
 from services.calendar_service import CalendarService
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 @router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_calendar(workspace_id: str = Query(None), svc: CalendarService = Depends(get_calendar_service)):
-    items = svc.list(group=workspace_id)
+    items = svc.list_calendar_events(group=workspace_id)
     return items
 
 @router.post("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
@@ -41,7 +41,7 @@ async def delete_calendar_event(calendar_event_id: str, svc: CalendarService = D
 @router.post("/{calendar_event_id}/participate", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def participate_calendar_event(
     calendar_event_id: str, 
-    participate_data: dict = {},
+    participate_data: ParticipationRequest,
     user: dict = Depends(get_current_user),
     svc: CalendarService = Depends(get_calendar_service)
     ) -> dict:

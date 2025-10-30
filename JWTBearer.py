@@ -4,21 +4,20 @@ from fastapi import HTTPException
 from jose import jwt, jwk, JWTError
 from starlette.requests import Request
 from jose.utils import base64url_decode
-from typing import Dict, Optional, List, Union
 from starlette.status import HTTP_403_FORBIDDEN
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-JWK = Dict[str, str]
+JWK = dict[str, str]
 
 
 class JWKS(BaseModel):
-    keys: List[JWK]
+    keys: list[JWK]
 
 
 class JWTAuthorizationCredentials(BaseModel):
     jwt_token: str
-    header: Dict[str, str]
-    claims: Dict[str, Union[str, int, bool, List[str]]]
+    header: dict[str, str]
+    claims: dict[str, str | int | bool | list[str]]
     signature: str
     message: str
 
@@ -42,8 +41,8 @@ class JWTBearer(HTTPBearer):
 
         return key.verify(jwt_credentials.message.encode(), decoded_signature)
 
-    async def __call__(self, request: Request) -> Optional[JWTAuthorizationCredentials]:
-        credentials: Optional[HTTPAuthorizationCredentials] = await super().__call__(request)
+    async def __call__(self, request: Request) -> JWTAuthorizationCredentials | None:
+        credentials: HTTPAuthorizationCredentials | None = await super().__call__(request)
 
         if credentials:
             if not credentials.scheme == "Bearer":

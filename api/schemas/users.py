@@ -1,6 +1,5 @@
 import decimal
 from enum import Enum
-from typing import Optional
 from pydantic import BaseModel
 
 
@@ -13,7 +12,7 @@ class PutUserMetrics(BaseModel):
     total: int
     puntaje_asistencia: decimal.Decimal
     puntaje_asistencia_description: str
-    last_update: Optional[str] = None
+    last_update: str | None = None
 
 class PutUserAvatar(BaseModel):
     avatar_url: str

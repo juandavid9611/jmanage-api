@@ -1,10 +1,10 @@
 import re
 from uuid import uuid4
+from typing import Any
 from repositories.s3_adapter import S3Adapter
 from services.user_service import UserService
 from services.tour_service import TourService
-from typing import Any, Dict, List, Optional, Set
-from api.schemas.calendar import PutCalendarEvent
+from api.schemas.calendar import ParticipationRequest, PutCalendarEvent
 from repositories.calendar_repo_ddb import CalendarRepo
 from services.notification_orchestator import Notifications
 from builders.tour_builder import build_tour_from_calendar_event
@@ -21,26 +21,26 @@ class CalendarService:
         self._custom_mapping_keys = {"start": "event_start", "end": "event_end", "group": "user_group", "location": "event_location"}
         self._relevant_tour_fields = {"title", "event_start", "event_end", "event_location", "category", "group"}
 
-    def get(self, calendar_event_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, calendar_event_id: str) -> dict[str, Any] | None:
         item = self.repo.get(calendar_event_id)
         if item:
             return self._map_calendar_event(item)
         return None
 
-    def list(self, *, group: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_calendar_events(self, *, group: str | None = None) -> list[dict[str, Any]]:
         if group:
             items = self.repo.list_by_group(group)
         else:
             items = self.repo.list_all()
         return [self._map_calendar_event(i) for i in items]
 
-    def create(self, calendar_item: PutCalendarEvent) -> Dict[str, Any]:
+    def create(self, calendar_item: PutCalendarEvent) -> dict[str, Any]:
         put_tour = build_tour_from_calendar_event(calendar_item)
         calendar_item.tourId = put_tour.id
         new_calendar_event = self._get_new_calendar_event(calendar_item)
         self.repo.put(new_calendar_event)
 
-        users = self.user_svc.list(group=calendar_item.group, include_disabled=False)
+        users = self.user_svc.list_users(group=calendar_item.group, include_disabled=False)
         user_emails = [user["email"] for user in users]
         self.notifier.calendar_event_created(user_emails=user_emails, calendar_event=calendar_item)
         
@@ -48,8 +48,8 @@ class CalendarService:
         self.tour_svc.create(put_tour)
         
         return self._map_calendar_event(new_calendar_event)
-    
-    def update(self, calendar_event_id: str, item: PutCalendarEvent) -> Optional[Dict[str, Any]]:
+
+    def update(self, calendar_event_id: str, item: PutCalendarEvent) -> dict[str, Any] | None:
         existing = self.repo.get(calendar_event_id)
         if not existing:
             return None
@@ -72,7 +72,7 @@ class CalendarService:
         self.repo.delete(calendar_event_id)
 
 
-    def participate(self, calendar_event_id: str, user, participate_data: dict = {}) -> Optional[Dict[str, Any]]:
+    def participate(self, calendar_event_id: str, user, participate_data: ParticipationRequest) -> dict[str, Any] | None:
         existing = self.repo.get(calendar_event_id)
         if not existing:
             return None
@@ -83,9 +83,9 @@ class CalendarService:
             raise ValueError("User ID and User Name must be provided in participate_data.")
         
         participants = existing.get("participants", {})
-        if participate_data.get("value") == True and user_id not in participants:
+        if participate_data.value == True and user_id not in participants:
             participants[user_id] = user_name
-        if participate_data.get("value") == False and user_id in participants:
+        if participate_data.value == False and user_id in participants:
             del participants[user_id]
         
         self.repo.update(
@@ -100,7 +100,7 @@ class CalendarService:
                 print(f"Tour {tour_id} not found")
             else:
                 bookers = tour.get("bookers", {})
-                if participate_data.get("value") == True and user_id not in bookers:
+                if participate_data.value == True and user_id not in bookers:
                     user_booked = {
                         "id": user_id,
                         "name": user_name,
@@ -115,14 +115,14 @@ class CalendarService:
                         "assists": 0,
                     }
                     bookers[user_id] = user_booked
-                if participate_data.get("value") == False and user_id in bookers:
+                if participate_data.value == False and user_id in bookers:
                     del bookers[user_id]
                 
                 self.tour_svc.update_attributes(tour_id, bookers=bookers)
         return existing
 
 
-    def _map_calendar_event(self, item: Dict[str, Any]):
+    def _map_calendar_event(self, item: dict[str, Any]):
         item["allDay"] = item.pop("all_day", None)
         item["start"] = item.pop("event_start", None)
         item["end"] = item.pop("event_end", None)
@@ -131,8 +131,8 @@ class CalendarService:
         item["location"] = item.pop("event_location", None)
         item["createTour"] = item.pop("create_tour", None)
         return item
-    
-    def _get_new_calendar_event(self, item: PutCalendarEvent) -> Dict[str, Any]:
+
+    def _get_new_calendar_event(self, item: PutCalendarEvent) -> dict[str, Any]:
         return {
             "id": f"{uuid4().hex}",
             "all_day": item.allDay,
@@ -148,10 +148,10 @@ class CalendarService:
             "create_tour": True,
             "tour_id": item.tourId,
         }
-    
-    def _get_needed_updates(self, item: PutCalendarEvent) -> Dict[str, Any]:
+
+    def _get_needed_updates(self, item: PutCalendarEvent) -> dict[str, Any]:
         data = item.dict(exclude_unset=True, exclude_none=True)
-        updates: Dict[str, Any] = {}
+        updates: dict[str, Any] = {}
         for field, value in data.items():
             if field in self._excluded_fields:
                 continue
@@ -162,8 +162,8 @@ class CalendarService:
         if key in self._custom_mapping_keys:
             return self._custom_mapping_keys[key]
         return re.sub(r'(?<!^)(?=[A-Z])', '_', key).lower()
-    
-    def _tour_attrs_from_event(self, evt: PutCalendarEvent) -> Dict[str, Any]:
+
+    def _tour_attrs_from_event(self, evt: PutCalendarEvent) -> dict[str, Any]:
         """
         Compute the tour fields to SET from the current event payload.
         Uses your pure builder for consistency, but returns only a dict of attrs.
@@ -178,8 +178,8 @@ class CalendarService:
             "group": draft.group,
             "calendarEventId": draft.calendarEventId,
         }
-    
-    def _relevant_changed(self, old: Dict[str, Any], new: Dict[str, Any], relevant_fields: Set[str]) -> bool:
+
+    def _relevant_changed(self, old: dict[str, Any], new: dict[str, Any], relevant_fields: set[str]) -> bool:
         """
         Compare old vs new using *stored* attribute names for relevant fields only.
         """

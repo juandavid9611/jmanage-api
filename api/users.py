@@ -1,7 +1,8 @@
+from api.schemas.files import FileSpec
 from di import get_user_service
 from auth import PermissionChecker
 from services.user_service import UserService
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from api.schemas.users import PutUser, CreateUser, PutUserAvatar, PutUserMetrics
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def list_users(
     workspace_id: str = Query(None), include_disabled: bool = False, svc: UserService = Depends(get_user_service)
     ):
-    items = svc.list(group=workspace_id, include_disabled=include_disabled)
+    items = svc.list_users(group=workspace_id, include_disabled=include_disabled)
     return {"users": items}
 
 @router.post("")
@@ -55,7 +56,7 @@ async def update_user_avatar_url(user_id: str, user_avatar: PutUserAvatar, svc: 
     return {"updated_avatar_url": user_avatar.avatar_url}
 
 @router.post("/{user_id}/generate-presigned-url", dependencies=[Depends(PermissionChecker(required_permissions=['user', 'admin']))])
-async def generate_user_presigned_url(user_id: str, files: list, svc: UserService = Depends(get_user_service)):
+async def generate_user_presigned_url(user_id: str, files: list[FileSpec] = Body(..., embed=False), svc: UserService = Depends(get_user_service)):
     try:
         result = svc.generate_presigned_urls(user_id=user_id, files=files)
     except Exception as e:

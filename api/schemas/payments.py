@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 from pydantic import BaseModel
 
 
@@ -11,8 +10,8 @@ class PaymentRequestStatus(str, Enum):
     APPROVAL_PENDING = "approval_pending"
 
 class BulkPutPaymentRequest(BaseModel):
-    id: Optional[str] = None
-    status: Optional[PaymentRequestStatus] = None
+    id: str | None = None
+    status: PaymentRequestStatus | None = None
     createDate: str
     dueDate: str
     concept: str
@@ -20,6 +19,6 @@ class BulkPutPaymentRequest(BaseModel):
     category: str
     group: str
     paymentRequestTo: list[dict]
-    isVerified: Optional[bool] = None
+    isVerified: bool | None = None
     userPrice: int
-    overduePrice: Optional[int] = None
+    overduePrice: int | None = None

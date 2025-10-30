@@ -1,9 +1,8 @@
 import locale
-from typing import Dict, Union
-from typing import Dict, Optional, Mapping, Any
 from api.schemas.calendar import PutCalendarEvent
 from repositories.notifications.ports import EmailSender
 from repositories.notifications.ports import InAppSender
+from typing import Mapping, Any
 from utils.datetime_utils import format_datetime_pretty_es, parse_timestamp_to_datetime, try_parsing_date
 from utils.env_utils import _env
 from utils.slack_alerts import send_overdue_summary
@@ -37,7 +36,7 @@ class Notifications:
         *,
         template_id: str,
         to_email: str,
-        data: Optional[Mapping[str, Any]] = None,
+        data: Mapping[str, Any] | None = None,
     ) -> str:
         return self._email_sender.send_template(
             template_id=template_id,
@@ -51,7 +50,7 @@ class Notifications:
         user_email: str,
         title: str,
         content: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         action_url_path: str = "dashboard/"
     ) -> str:
         return self._in_app_sender.publish(
@@ -68,7 +67,7 @@ class Notifications:
         user_emails: list[str],
         title: str,
         content: str,
-        category: Optional[str] = None,
+        category: str | None = None,
         action_url_path: str = "dashboard/"
     ) -> str:
 
@@ -102,8 +101,8 @@ class Notifications:
         concept: str,
         amount: int,
         due_date: str
-    ) -> Dict[str, Union[str, Exception]]:
-        results: Dict[str, Union[str, Exception]] = {}
+    ) -> dict[str, str | Exception]:
+        results: dict[str, str | Exception] = {}
         try:
             results["email"] = self._send_email(
                 template_id=self.COURIER_TEMPLATE_PAYMENT_CREATED,
@@ -138,8 +137,8 @@ class Notifications:
         concept: str,
         changes: list[dict[str, Any]],
         notify_admins: bool = False
-    ) -> Dict[str, Union[str, Exception]]:
-        results: Dict[str, Union[str, Exception]] = {}
+    ) -> dict[str, str | Exception]:
+        results: dict[str, str | Exception] = {}
         try:
             data = {
                 "userName": user_name,
@@ -178,8 +177,8 @@ class Notifications:
         user_name: str,
         pending_count: int,
         overdue_payments: list[dict[str, Any]],
-    ) -> Dict[str, Union[str, Exception]]:
-        results: Dict[str, Union[str, Exception]] = {}
+    ) -> dict[str, str | Exception]:
+        results: dict[str, str | Exception] = {}
         for payment in overdue_payments:
             email = payment["to_email"]
             name = payment["to_name"]

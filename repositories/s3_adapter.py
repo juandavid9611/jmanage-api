@@ -1,6 +1,5 @@
 import os
 import boto3
-from typing import Dict
 from repositories.s3_keys import KeyBuilder
 from utils.env_utils import _env
 
@@ -21,7 +20,7 @@ class S3Adapter:
         key: str,
         content_type: str,
         expires_in: int = 3600,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         params = {"Bucket": _bucket_name(), "Key": key, "ContentType": content_type}
         url = self._s3.generate_presigned_url(
             ClientMethod="put_object",
@@ -57,7 +56,7 @@ class S3Adapter:
         filename: str,
         content_type: str,
         expires_in: int = 3600,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         key = self._kb.invoice_file(user_id, payment_request_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
 
@@ -68,7 +67,7 @@ class S3Adapter:
         filename: str,
         content_type: str,
         expires_in: int = 3600,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         key = self._kb.tour_image(tour_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
     
@@ -79,6 +78,6 @@ class S3Adapter:
         filename: str,
         content_type: str,
         expires_in: int = 3600,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         key = self._kb.user_profile_photos(user_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)

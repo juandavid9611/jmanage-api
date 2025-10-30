@@ -1,4 +1,3 @@
-from typing import Optional
 from auth import PermissionChecker
 from di import get_payment_request_service
 from fastapi import APIRouter, Depends, HTTPException

@@ -1,7 +1,8 @@
 from time import time
 from uuid import uuid4
+from typing import Any
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from api.schemas.files import FileSpec
 from repositories.s3_adapter import S3Adapter
 from services.notification_orchestator import Notifications
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
@@ -24,13 +25,13 @@ class PaymentRequestService:
         }
         self._payments_username = "Vittoria CD Pagos"
 
-    def get(self, payment_request_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, payment_request_id: str) -> dict[str, Any] | None:
         item = self.repo.get(payment_request_id)
         if item:
             return self._map_payment_request(item)
         return None
 
-    def list(self, *, user_id: Optional[str] = None, group: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_payment_requests(self, *, user_id: str | None = None, group: str | None = None) -> list[dict[str, Any]]:
         if user_id:
             items = self.repo.list_by_user(user_id)
         elif group:
@@ -39,7 +40,7 @@ class PaymentRequestService:
             items = self.repo.list_all()
         return [self._map_payment_request(i, get_presigned_url=False) for i in items]
 
-    def bulk_create(self, bulk_item: BulkPutPaymentRequest) -> List[Dict[str, Any]]:
+    def bulk_create(self, bulk_item: BulkPutPaymentRequest) -> list[dict[str, Any]]:
         if bulk_item is None or not hasattr(bulk_item, "paymentRequestTo") or not bulk_item.paymentRequestTo:
             raise ValueError("No users provided for payment request creation.")
 
@@ -59,7 +60,7 @@ class PaymentRequestService:
             new_payment_requests.append(self._map_payment_request(new_payment_request, get_presigned_url=False))
         return new_payment_requests
 
-    def update(self, payment_request_id: str, item: BulkPutPaymentRequest) -> Optional[Dict[str, Any]]:
+    def update(self, payment_request_id: str, item: BulkPutPaymentRequest) -> dict[str, Any] | None:
         existing = self.get(payment_request_id)
         if not existing:
             return None
@@ -84,18 +85,18 @@ class PaymentRequestService:
     def delete(self, payment_request_id: str) -> None:
         self.repo.delete(payment_request_id)
 
-    def generate_put_presigned_urls(self, payment_request_id: str, files: List[Dict]) -> Dict[str, Dict[str, str]]:
+    def generate_put_presigned_urls(self, payment_request_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
         presigned_urls = {}
         payment_request = self.get(payment_request_id)
         if not payment_request:
             raise ValueError(f"Payment Request {payment_request_id} not found")
         user_id = payment_request["userId"]
         for file in files:
-            if not isinstance(file, dict):
-                raise TypeError("Each file must be a dictionary with 'file_name' and 'content_type' keys.")
+            if not isinstance(file, FileSpec):
+                raise TypeError("Each file must be an instance of FileSpec.")
 
-            file_name = file.get("file_name")
-            file_content_type = file.get("content_type")
+            file_name = file.file_name
+            file_content_type = file.content_type
             if not file_name or not file_content_type:
                 raise ValueError("File 'file_name' and 'content_type' cannot be empty.")
 
@@ -108,7 +109,7 @@ class PaymentRequestService:
             presigned_urls[file_name] = result["url"]
         return presigned_urls
 
-    def request_payment_request_approval(self, payment_request_id: str, file_names: List[str]) -> str:
+    def request_payment_request_approval(self, payment_request_id: str, file_names: list[str]) -> str:
         existing = self.get(payment_request_id)
         if not existing:
             raise ValueError(f"Payment Request {payment_request_id} not found")
@@ -140,7 +141,7 @@ class PaymentRequestService:
             )
         return payment_request_id
 
-    def process_overdue_payments(self) -> List[Dict[str, Any]]:
+    def process_overdue_payments(self) -> list[dict[str, Any]]:
         pending_items = self.repo.list_by_status(PaymentRequestStatus.PENDING)
         datetime_now = datetime.now()
         overdue_payments = []
@@ -171,7 +172,7 @@ class PaymentRequestService:
         )
         return overdue_payments
 
-    def _map_payment_request(self, item: Dict[str, Any], get_presigned_url=True) -> Dict[str, Any]:
+    def _map_payment_request(self, item: dict[str, Any], get_presigned_url=True) -> dict[str, Any]:
         item["createDate"] = item.pop("create_date", None)
         item["dueDate"] = item.pop("due_date", None)
         item["status"] = item.pop("payment_status", None)
@@ -185,7 +186,7 @@ class PaymentRequestService:
             item["images"] = [self.s3.presign_get_from_explicit_key(key=image) for image in item.get("images", [])]
         return item
 
-    def _get_needed_updates(self, item: BulkPutPaymentRequest) -> Dict[str, Any]:
+    def _get_needed_updates(self, item: BulkPutPaymentRequest) -> dict[str, Any]:
         updates = {}
         for field in self._updateable_fields:
             value = getattr(item, field, None)
@@ -214,7 +215,7 @@ class PaymentRequestService:
                 fields_changed.append({"name": field, "old_value": old_payment_request[field], "new_value": new_payment_request[field]})
         return fields_changed
 
-    def _get_new_payment_request(self, bulk_item: BulkPutPaymentRequest, user: Dict[str, Any], created_time: int) -> Dict[str, Any]:
+    def _get_new_payment_request(self, bulk_item: BulkPutPaymentRequest, user: dict[str, Any], created_time: int) -> dict[str, Any]:
         return {
             "id": f"{uuid4().hex}",
             "create_date": bulk_item.createDate,

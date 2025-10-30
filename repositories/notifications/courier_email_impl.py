@@ -1,6 +1,6 @@
 import os
 from trycourier import Courier
-from typing import Mapping, Any, Optional
+from typing import Mapping, Any
 from repositories.notifications.ports import EmailSender
 
 
@@ -9,7 +9,7 @@ class CourierNotificationSender(EmailSender):
     Thin adapter for TryCourier. Compatible with both modern and legacy client methods.
     Prefers client.send_message(message=...) if available; falls back to client.send(...).
     """
-    def __init__(self, client: Optional[Courier] = None, auth_token: Optional[str] = None):
+    def __init__(self, client: Courier | None = None, auth_token: str | None = None):
         if client:
             self._client = client
         else:
@@ -22,8 +22,8 @@ class CourierNotificationSender(EmailSender):
         self,
         *,
         template_id: str,
-        to_email: Optional[str] = None,
-        data: Optional[Mapping[str, Any]] = None,
+        to_email: str | None = None,
+        data: Mapping[str, Any] | None = None,
     ) -> str:
         if not to_email:
             raise ValueError("Must provide to_email")

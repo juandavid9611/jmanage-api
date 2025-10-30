@@ -1,24 +1,23 @@
-from typing import Optional
 from pydantic import BaseModel
 
 
 class PutTour(BaseModel):
-    id: Optional[str] = None
-    name: Optional[str] = None
-    images: Optional[list] = None
-    publish: Optional[str] = None
-    services: Optional[list] = None
-    available: Optional[dict] = None
-    tourGuides: Optional[list] = None
-    bookers: Optional[dict] = None
-    content: Optional[str] = None
-    tags: Optional[list] = None
-    location: Optional[str] = None
-    scores: Optional[dict] = None
-    createdAt: Optional[str] = None
-    calendarEventId: Optional[str] = None
-    group: Optional[str] = None
-    eventType: Optional[str] = None
+    id: str | None = None
+    name: str | None = None
+    images: list[str] | None = None
+    publish: str | None = None
+    services: list[str] | None = None
+    available: dict | None = None
+    tourGuides: list[str] | None = None
+    bookers: dict | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    location: str | None = None
+    scores: dict | None = None
+    createdAt: str | None = None
+    calendarEventId: str | None = None
+    group: str | None = None
+    eventType: str | None = None
 
 class PatchProperty(BaseModel):
     name: str

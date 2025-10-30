@@ -1,15 +1,14 @@
-from datetime import datetime
-from typing import Union
 import pytz
+from datetime import datetime
 from babel.dates import format_datetime
 
 # Re-exported names for easy imports in services
 __all__ = ["parse_timestamp_to_datetime", "format_datetime_pretty_es"]
 
-Number = Union[int, float]
+Number = int | float
 
 
-def parse_timestamp_to_datetime(timestamp: Union[Number, str]) -> datetime:
+def parse_timestamp_to_datetime(timestamp: Number | str) -> datetime:
     """
     Convert a unix timestamp (seconds or milliseconds) into a timezone-aware
     datetime in America/Bogota.
@@ -63,7 +62,7 @@ def try_parsing_date(text: str) -> datetime:
             return datetime.strptime(text, fmt)
         except ValueError:
             pass
-    try :
+    try:
         return datetime.fromisoformat(text)
     except ValueError:
         pass

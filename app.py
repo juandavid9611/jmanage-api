@@ -2,6 +2,8 @@ import locale
 import uvicorn
 from mangum import Mangum
 from fastapi import FastAPI
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv(".env", usecwd=True), override=True)
 from api.tours import router as tours_router
 from api.users import router as users_router
 from fastapi.middleware.cors import CORSMiddleware

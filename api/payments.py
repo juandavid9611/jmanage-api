@@ -1,7 +1,7 @@
-from typing import Optional
 from auth import PermissionChecker
+from api.schemas.files import FileSpec
 from di import get_payment_request_service
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Form, HTTPException
 from api.schemas.payments import BulkPutPaymentRequest
 from services.payment_request_service import PaymentRequestService
 
@@ -10,11 +10,11 @@ router = APIRouter(prefix="/payment_requests", tags=["payment_requests"])
 
 @router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def list_payment_requests(
-    user_id: Optional[str] = None, 
-    workspace_id: Optional[str] = None,
+    user_id: str | None = None, 
+    workspace_id: str | None = None,
     svc: PaymentRequestService = Depends(get_payment_request_service)
     ):
-    items = svc.list(user_id=user_id, group=workspace_id)
+    items = svc.list_payment_requests(user_id=user_id, group=workspace_id)
     return items
 
 @router.post("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
@@ -44,7 +44,10 @@ async def delete_payment_request(payment_request_id: str, svc: PaymentRequestSer
 
 #TODO MISSING TESTING
 @router.post("/{payment_request_id}/generate-presigned-urls", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def generate_payment_request_presigned_urls(payment_request_id: str, files: list, svc: PaymentRequestService = Depends(get_payment_request_service)):
+async def generate_payment_request_presigned_urls(
+    payment_request_id: str, 
+    files: list[FileSpec] = Body(..., embed=False), 
+    svc: PaymentRequestService = Depends(get_payment_request_service)):
     payment_request = svc.get(payment_request_id)
     if not payment_request:
         raise HTTPException(status_code=404, detail=f"Payment Request {payment_request_id} not found")
@@ -58,7 +61,8 @@ async def generate_payment_request_presigned_urls(payment_request_id: str, files
 
 #TODO MISSING TESTING
 @router.post("/{payment_request_id}/request_approval", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def request_payment_request_approval(payment_request_id: str, file_names: list, svc: PaymentRequestService = Depends(get_payment_request_service)):
+async def request_payment_request_approval(
+    payment_request_id: str, file_names: list[str] = Body(..., embed=False), svc: PaymentRequestService = Depends(get_payment_request_service)):
     payment_request = svc.get(payment_request_id)
     if not payment_request:
         raise HTTPException(status_code=404, detail=f"Payment Request {payment_request_id} not found")

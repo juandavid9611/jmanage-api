@@ -1,10 +1,11 @@
 import re
 from uuid import uuid4
+from typing import Any
 from datetime import datetime
+from api.schemas.files import FileSpec
 from repositories.s3_adapter import S3Adapter
 from repositories.tour_repo_ddb import TourRepo
 from api.schemas.calendar import PutCalendarEvent
-from typing import Any, Dict, List, Optional, Tuple
 from api.schemas.tours import PatchProperty, PutTour
 from services.notification_orchestator import Notifications
 from utils.datetime_utils import format_datetime_pretty_es, parse_timestamp_to_datetime
@@ -20,13 +21,13 @@ class TourService:
         self._booker_bool_fields = {"approved", "late", "yellowCard", "redCard", "mvp"}
         self._booker_int_fields = {"goals", "assists"}
 
-    def get(self, tour_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, tour_id: str) -> dict[str, Any] | None:
         item = self.repo.get(tour_id)
         if item:
             return self._map_tour(item)
         return None
 
-    def list(self, *, group: Optional[str] = None, tour_type: Optional[str]) -> List[Dict[str, Any]]:
+    def list_tours(self, *, group: str | None = None, tour_type: str | None = None) -> list[dict[str, Any]]:
         if group:
             items = self.repo.list_by_group(group)
         elif tour_type:
@@ -34,13 +35,13 @@ class TourService:
         else:
             items = self.repo.list_all()
         return [self._map_tour(i) for i in items]
-    
-    def create(self, item: PutTour) -> Dict[str, Any]:
+
+    def create(self, item: PutTour) -> dict[str, Any]:
         new_tour = self._get_new_tour(item)
         self.repo.put(new_tour)
         return self._map_tour(new_tour)
-    
-    def update(self, tour_id: str, item: PutTour) -> Optional[Dict[str, Any]]:
+
+    def update(self, tour_id: str, item: PutTour) -> dict[str, Any] | None:
         existing = self.repo.get(tour_id)
         if not existing:
             return None
@@ -52,12 +53,12 @@ class TourService:
         if not new_item:
             raise ValueError(f"Tour {tour_id} not found after update.")
         return self._map_tour(new_item)
-    
-    def update_attributes(self, tour_id: str, **attrs) -> Optional[Dict[str, Any]]:
+
+    def update_attributes(self, tour_id: str, **attrs) -> dict[str, Any] | None:
         existing = self.repo.get(tour_id)
         if not existing:
             return None
-        updates: Dict[str, Any] = {}
+        updates: dict[str, Any] = {}
         for k, v in attrs.items():
             if k in self._excluded_fields or v is None:
                 continue
@@ -75,7 +76,7 @@ class TourService:
     def delete(self, tour_id: str) -> None:
         self.repo.delete(tour_id)
 
-    def generate_put_presigned_urls(self, tour_id: str, files: List[Dict]) -> Dict[str, Dict[str, str]]:
+    def generate_put_presigned_urls(self, tour_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
         # TODO failing with multiple files in different calls - check why
         presigned_urls = {}
         tour = self.get(tour_id)
@@ -83,11 +84,11 @@ class TourService:
             raise ValueError(f"Tour {tour_id} not found")
         # TODO Extract into S3Adapter method or other service. Works for payments too
         for file in files:
-            if not isinstance(file, dict):
-                raise TypeError("Each file must be a dictionary with 'name' and 'content_type' keys.")
-            
-            file_name = file.get("file_name")
-            file_content_type = file.get("content_type")
+            if not isinstance(file, FileSpec):
+                raise TypeError("Each file must be a FileSpec instance.")
+
+            file_name = file.file_name
+            file_content_type = file.content_type
             if not file_name or not file_content_type:
                 raise ValueError("File 'name' and 'content_type' cannot be empty.")
             
@@ -98,8 +99,8 @@ class TourService:
             )
             presigned_urls[file_name] = result["url"]
         return presigned_urls
-    
-    def add_images(self, tour_id: str, file_names: List[str]) -> List[str]:
+
+    def add_images(self, tour_id: str, file_names: list[str]) -> list[str]:
         existing = self.get(tour_id)
         if not existing:
             raise ValueError(f"Tour {tour_id} not found")
@@ -115,7 +116,7 @@ class TourService:
         )
         return images
 
-    def update_booker_property(self, tour_id: str, booker_id: str, patch_property: PatchProperty) -> Optional[Dict[str, Any]]:
+    def update_booker_property(self, tour_id: str, booker_id: str, patch_property: PatchProperty) -> dict[str, Any] | None:
         existing = self.repo.get(tour_id)
         if not existing:
             return None
@@ -137,7 +138,7 @@ class TourService:
         self.repo.update(tour_id, {"bookers": bookers})
         return bookers
 
-    def _get_new_tour(self, item: PutTour) -> Dict[str, Any]:
+    def _get_new_tour(self, item: PutTour) -> dict[str, Any]:
         return {
             "id": item.id or f"tour_{uuid4().hex}",
             "tour_name": item.name,
@@ -156,7 +157,7 @@ class TourService:
             "event_type": item.eventType,
             "user_group": item.group,
     }
-    def _map_tour(self, item: Dict[str, Any], get_presigned_url=True) -> Dict[str, Any]:
+    def _map_tour(self, item: dict[str, Any], get_presigned_url=True) -> dict[str, Any]:
         item["name"] = item.pop("tour_name", None)
         item["createdAt"] = item.pop("created_at", None)
         item["tourGuides"] = item.pop("tour_guides", None)
@@ -168,9 +169,9 @@ class TourService:
             item["images"] = [self.s3.get_s3_public_url(key=image) for image in item.get("images", [])]
         return item
 
-    def _get_needed_updates(self, item: PutTour) -> Dict[str, Any]:
+    def _get_needed_updates(self, item: PutTour) -> dict[str, Any]:
         data = item.dict(exclude_unset=True, exclude_none=True)
-        updates: Dict[str, Any] = {}
+        updates: dict[str, Any] = {}
         for field, value in data.items():
             if field in self._excluded_fields:
                 continue
@@ -227,11 +228,11 @@ class TourService:
             group=put_calendar_event.group
         )
         return put_tour
-    
-    def _build_set_update(self, attrs: Dict[str, Any]) -> Tuple[str, Dict[str, Any], Dict[str, str]]:
+
+    def _build_set_update(self, attrs: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, str]]:
         parts = []
-        eav: Dict[str, Any] = {}
-        ean: Dict[str, str] = {}
+        eav: dict[str, Any] = {}
+        ean: dict[str, str] = {}
         for i, (attr, val) in enumerate(attrs.items(), start=1):
             nk = f"#n{i}"; vk = f":v{i}"
             ean[nk] = attr

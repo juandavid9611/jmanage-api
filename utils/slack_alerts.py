@@ -3,16 +3,16 @@ import os
 import json
 import time
 import hashlib
-from typing import Any, Union, Dict, Optional
+from typing import Any
 from urllib import request, error
 from zoneinfo import ZoneInfo
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 APP_NAME = os.environ.get("APP_NAME", "SportsManagement")
-ENV = os.environ.get("ENV", "dev")
+ENV = os.environ.get("ENV", "local")
 
 # Evita spam del mismo error (por contenedor caliente de Lambda)
-_LAST_SENT: Dict[str, float] = {}
+_LAST_SENT: dict[str, float] = {}
 _SUPPRESS_SEC = int(os.environ.get("SLACK_ALERT_SUPPRESS_SEC", "60"))  # configurable
 SLACK_ALERT_MENTION = os.environ.get("SLACK_ALERT_MENTION", "off")  # "here" | "channel" | "off"
 
@@ -34,14 +34,14 @@ def _should_suppress(d: str) -> bool:
     _LAST_SENT[d] = now
     return False
 
-def _cop(value: Union[int, float]) -> str:
+def _cop(value: int | float) -> str:
     """Formato consistente de moneda COP sin locale."""
     try:
         return f"${float(value):,.0f} COP".replace(",", ".")
     except Exception:
         return "$0 COP"
 
-def _slack_post_blocks(blocks: list, fallback: str):
+def _slack_post_blocks(blocks: list[dict], fallback: str):
     """Envía bloque a Slack; seguro ante fallos."""
     if not SLACK_WEBHOOK_URL:
         print("[slack] (dry-run)", fallback)
@@ -71,7 +71,7 @@ def _header(text: str) -> dict:
 def _section_md(md: str) -> dict:
     return {"type": "section", "text": {"type": "mrkdwn", "text": md}}
 
-def _fields(kv: dict[str, Union[str, int, float]]) -> dict:
+def _fields(kv: dict[str, int | float | str]) -> dict:
     f = []
     for k, v in kv.items():
         f.append({"type": "mrkdwn", "text": f"*{k}*"})
@@ -124,7 +124,7 @@ def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: st
     except error.URLError as e:
         print("[slack_alerts] Failed sending to Slack:", e)
 
-def alert_with_stack(title: str, detail_fields: Dict[str, Optional[str]], stack: str, level="critical"):
+def alert_with_stack(title: str, detail_fields: dict[str, str | None], stack: str, level="critical"):
     """
     Construye un bloque de detalles en Markdown, aplica deduplicación y envía.
     """
@@ -146,7 +146,7 @@ def alert_with_stack(title: str, detail_fields: Dict[str, Optional[str]], stack:
 def send_overdue_summary(
     user_name: str,
     pending_count: int,
-    overdue_payments: list[Dict[str, Any]],
+    overdue_payments: list[dict[str, Any]],
 ):
     """Publica en Slack el resumen del job nocturno de pagos vencidos."""
     tz = ZoneInfo("America/Bogota")

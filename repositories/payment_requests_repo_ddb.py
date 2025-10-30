@@ -1,10 +1,10 @@
 import os
 from .ddb_session import payment_request_table
 from boto3.dynamodb.conditions import Key, Attr
-from typing import Optional, Iterable, Dict, Any, List
+from typing import Iterable, Any
 
-def _scan_all(table, **kwargs) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
+def _scan_all(table, **kwargs) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
     start_key = None
     while True:
         if start_key:
@@ -23,14 +23,14 @@ class PaymentRequestsRepo:
         self._user_gsi = os.getenv("PAYMENT_REQUEST_USER_GSI", "user_index")
         self._status_gsi = os.getenv("PAYMENT_REQUEST_STATUS_GSI", "status_index")
 
-    def get(self, payment_request_id: str) -> Optional[Dict[str, Any]]:
+    def get(self, payment_request_id: str) -> dict[str, Any] | None:
         resp = self._table.get_item(Key={"id": payment_request_id})
         return resp.get("Item")
 
-    def list_all(self) -> Iterable[Dict[str, Any]]:
+    def list_all(self) -> Iterable[dict[str, Any]]:
         return _scan_all(self._table)
 
-    def list_by_user(self, user_id: str) -> Iterable[Dict[str, Any]]:
+    def list_by_user(self, user_id: str) -> Iterable[dict[str, Any]]:
         # Prefer query against GSI if present; fall back to scan filter
         try:
             resp = self._table.query(
@@ -41,7 +41,7 @@ class PaymentRequestsRepo:
         except Exception:
             return [i for i in self.list_all() if i.get("user_id") == user_id]
 
-    def list_by_group(self, group: str) -> Iterable[Dict[str, Any]]:
+    def list_by_group(self, group: str) -> Iterable[dict[str, Any]]:
         # TODO optimize with GSI if needed
         return _scan_all(
             self._table,
@@ -49,7 +49,7 @@ class PaymentRequestsRepo:
         )
     
     # TODO: Ensure index usage
-    def list_by_status(self, status: str) -> Iterable[Dict[str, Any]]:
+    def list_by_status(self, status: str) -> Iterable[dict[str, Any]]:
         try:
             resp = self._table.query(
                 IndexName=self._status_gsi,
@@ -61,10 +61,10 @@ class PaymentRequestsRepo:
 
 
     # ------------- Writes -------------
-    def put(self, item: Dict[str, Any]) -> None:
+    def put(self, item: dict[str, Any]) -> None:
         self._table.put_item(Item=item)
 
-    def update(self, payment_request_id: str, updates: Dict[str, Any]) -> None:
+    def update(self, payment_request_id: str, updates: dict[str, Any]) -> None:
         update_expr_parts = []
         expr_attr_values = {}
         expr_attr_names = {}

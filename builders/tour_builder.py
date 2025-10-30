@@ -1,4 +1,3 @@
-from typing import List, Optional, Union
 from uuid import uuid4
 from api.schemas.calendar import PutCalendarEvent
 from api.schemas.tours import PutTour
@@ -9,16 +8,16 @@ SERVICE_BY_GROUP = {
     "female": "Vittoria Femenino",
 }
 
-def _dedup_preserve_order(items: List[str]) -> List[str]:
+def _dedup_preserve_order(items: list[str]) -> list[str]:
     seen = set()
-    out: List[str] = []
+    out: list[str] = []
     for s in items:
         if s and s not in seen:
             out.append(s)
             seen.add(s)
     return out
 
-def _training_title(start_ts: Optional[Union[int, float, str]]) -> str:
+def _training_title(start_ts: str | int | float | None) -> str:
     if start_ts is not None:
         dt = parse_timestamp_to_datetime(start_ts)
         pretty = format_datetime_pretty_es(dt)
@@ -30,7 +29,7 @@ def _compute_title(evt: PutCalendarEvent) -> str:
         return _training_title(evt.start)
     return evt.title or (evt.category.capitalize() if evt.category else "Evento")
 
-def _services_for(evt: PutCalendarEvent) -> List[str]:
+def _services_for(evt: PutCalendarEvent) -> list[str]:
     raw = [SERVICE_BY_GROUP.get(evt.group), evt.category]
     return _dedup_preserve_order([s for s in raw if s])
 
