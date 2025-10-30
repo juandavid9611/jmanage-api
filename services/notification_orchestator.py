@@ -6,6 +6,7 @@ from repositories.notifications.ports import EmailSender
 from repositories.notifications.ports import InAppSender
 from utils.datetime_utils import format_datetime_pretty_es, parse_timestamp_to_datetime, try_parsing_date
 from utils.env_utils import _env
+from utils.slack_alerts import send_overdue_summary
 
 
 class Notifications:
@@ -202,7 +203,7 @@ class Notifications:
                 )
             except Exception as e:
                 results[f"email_{email}"] = e
-        if self._admin_email_notifications_enabled:
+        if self._admin_email_notifications_enabled and overdue_payments:
             for email in self._admin_emails:
                 try:
                     self._send_email(
@@ -215,6 +216,11 @@ class Notifications:
                     )
                 except Exception as e:
                     results[email] = e
+        try:
+            send_overdue_summary(user_name=user_name, overdue_payments=overdue_payments)
+            results["slack_summary"] = "sent"
+        except Exception as e:
+            results["slack_summary"] = e
         return results
 
     def calendar_event_created(self, *, user_emails: list[str], calendar_event: PutCalendarEvent) -> str:

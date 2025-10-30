@@ -1,17 +1,21 @@
+from datetime import datetime
 import os
 import json
 import time
 import hashlib
-from typing import Union
+from typing import Any, Union, Dict, Optional
 from urllib import request, error
+from zoneinfo import ZoneInfo
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 APP_NAME = os.environ.get("APP_NAME", "SportsManagement")
 ENV = os.environ.get("ENV", "dev")
 
 # Evita spam del mismo error (por contenedor caliente de Lambda)
-_LAST_SENT: dict[str, float] = {}
+_LAST_SENT: Dict[str, float] = {}
 _SUPPRESS_SEC = int(os.environ.get("SLACK_ALERT_SUPPRESS_SEC", "60"))  # configurable
+SLACK_ALERT_MENTION = os.environ.get("SLACK_ALERT_MENTION", "off")  # "here" | "channel" | "off"
+
 
 def _truncate(text: str, max_len: int = 2500) -> str:
     return text if len(text) <= max_len else text[:max_len] + "\n… [truncated]"
@@ -29,6 +33,53 @@ def _should_suppress(d: str) -> bool:
         return True
     _LAST_SENT[d] = now
     return False
+
+def _cop(value: Union[int, float]) -> str:
+    """Formato consistente de moneda COP sin locale."""
+    try:
+        return f"${float(value):,.0f} COP".replace(",", ".")
+    except Exception:
+        return "$0 COP"
+
+def _slack_post_blocks(blocks: list, fallback: str):
+    """Envía bloque a Slack; seguro ante fallos."""
+    if not SLACK_WEBHOOK_URL:
+        print("[slack] (dry-run)", fallback)
+        return
+    mention = ""
+    if SLACK_ALERT_MENTION == "here":
+        mention = "<!here> "
+    elif SLACK_ALERT_MENTION == "channel":
+        mention = "<!channel> "
+
+    payload = {"text": f"{mention}{fallback}", "blocks": blocks}
+    req = request.Request(
+        SLACK_WEBHOOK_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=6) as resp:
+            _ = resp.read()
+    except Exception as e:
+        print("[slack] send error:", e)
+
+def _header(text: str) -> dict:
+    return {"type": "header", "text": {"type": "plain_text", "text": text}}
+
+def _section_md(md: str) -> dict:
+    return {"type": "section", "text": {"type": "mrkdwn", "text": md}}
+
+def _fields(kv: dict[str, Union[str, int, float]]) -> dict:
+    f = []
+    for k, v in kv.items():
+        f.append({"type": "mrkdwn", "text": f"*{k}*"})
+        f.append({"type": "mrkdwn", "text": f"{v}"})
+    return {"type": "section", "fields": f}
+
+def _divider() -> dict:
+    return {"type": "divider"}
 
 def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: str = "error"):
     """
@@ -73,7 +124,7 @@ def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: st
     except error.URLError as e:
         print("[slack_alerts] Failed sending to Slack:", e)
 
-def alert_with_stack(title: str, detail_fields: dict[str, Union[str, None]], stack: str, level="critical"):
+def alert_with_stack(title: str, detail_fields: Dict[str, Optional[str]], stack: str, level="critical"):
     """
     Construye un bloque de detalles en Markdown, aplica deduplicación y envía.
     """
@@ -89,3 +140,46 @@ def alert_with_stack(title: str, detail_fields: dict[str, Union[str, None]], sta
         return
 
     send_slack_alert(title=title, detail_md=detail_md, stack=stack, level=level)
+
+# ---------------------- Alertas ----------------------
+
+def send_overdue_summary(
+    user_name: str,
+    overdue_payments: list[Dict[str, Any]],
+):
+    """Publica en Slack el resumen del job nocturno de pagos vencidos."""
+    tz = ZoneInfo("America/Bogota")
+    run_date = datetime.now(tz).date().isoformat()
+    count = len(overdue_payments)
+    total = sum(float(p.get("user_price") or 0) for p in overdue_payments)
+
+    preview = overdue_payments[:10]
+    rows = [
+        f"• `{p.get('id')}` · {p.get('concept')} · {p.get('to_name')} · {_cop(p.get('user_price') or 0)}"
+        for p in preview
+    ]
+    if count > len(preview):
+        rows.append(f"… y {count - len(preview)} más")
+
+    blocks = [
+        _header("📣 Resumen job pagos vencidos"),
+        _section_md(f"*Fecha:* `{run_date}` · *Encontrados:* `{count}` · *Marcados overdue:* `{count}`"),
+        _fields({"Monto total afectado": _cop(total)}),
+        _divider(),
+    ]
+    if rows:
+        blocks += [
+            _section_md("*Preview (máx. 10):*"),
+            _section_md("\n".join(rows)),
+        ]
+    blocks += [
+        _divider(),
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"_Env:_ `{ENV}`  ·  _App:_ `{APP_NAME}`  ·  _By:_ `{user_name}`"},
+            ],
+        },
+    ]
+
+    _slack_post_blocks(blocks, fallback=f"{APP_NAME} {ENV} – resumen pagos vencidos")

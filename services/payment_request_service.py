@@ -139,9 +139,8 @@ class PaymentRequestService:
                 notify_admins=True
             )
         return payment_request_id
-    
-    def proccess_overdue_payments(self) -> List[Dict[str, Any]]:
-        print('Processing overdue payments')
+
+    def process_overdue_payments(self) -> List[Dict[str, Any]]:
         pending_items = self.repo.list_by_status(PaymentRequestStatus.PENDING)
         datetime_now = datetime.now()
         overdue_payments = []
@@ -161,6 +160,7 @@ class PaymentRequestService:
                 overdue_payments.append({
                         "id": item["id"], 
                         "concept": item["concept"],
+                        "user_price": new_price,
                         "to_name": item["payment_request_to"]["name"],
                         "to_email": item["payment_request_to"]["email"]
                     })
