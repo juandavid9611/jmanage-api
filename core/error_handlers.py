@@ -1,8 +1,9 @@
 import logging
 import traceback
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from utils.slack_alerts import alert_with_stack
+from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,18 @@ def install_error_handlers(app: FastAPI):
                 "error_type": "HTTPException",
             },
         )
+        if exc.status_code >= 500:
+            stack = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            alert_with_stack(
+                title=f"HTTPException {exc.status_code}",
+                detail_fields={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                },
+                stack=stack,
+                level="error",
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -43,6 +56,12 @@ def install_error_handlers(app: FastAPI):
                 "status_code": 422,
                 "error_type": "ValidationError",
             },
+        )
+        alert_with_stack(
+            title="ValidationError 422",
+            detail_fields={"request_id": request_id, "method": request.method, "path": request.url.path},
+            stack="",  # normalmente no hay stack útil
+            level="warning",
         )
         return JSONResponse(
             status_code=422,
@@ -68,6 +87,16 @@ def install_error_handlers(app: FastAPI):
                 "error_type": type(exc).__name__,
                 "error_stack": stack,
             },
+        )
+        alert_with_stack(
+            title=f"Unhandled {type(exc).__name__}",
+            detail_fields={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+            },
+            stack=stack,
+            level="critical",
         )
         return JSONResponse(
             status_code=500,

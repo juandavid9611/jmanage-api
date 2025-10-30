@@ -43,6 +43,7 @@ class UserService:
         return self._map_users(items, cog_users)
     
     def create(self, item: CreateUser) -> Dict[str, Any]:
+        #TODO Check if user exists in Cognito
         new_user = self._get_new_user(item)
         self.repo.put(new_user)
         self.notifier.send_user_welcome(email=item.email, name=item.name)
