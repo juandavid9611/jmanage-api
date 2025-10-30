@@ -1,5 +1,4 @@
 import locale
-import uvicorn
 from mangum import Mangum
 from fastapi import FastAPI
 from dotenv import load_dotenv, find_dotenv
@@ -54,6 +53,7 @@ if _use_mangum():
     handler = Mangum(app)
 
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
