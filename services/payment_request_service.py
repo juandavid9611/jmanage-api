@@ -166,6 +166,7 @@ class PaymentRequestService:
                     })
         self.notifier.overdue_payments_processed(
             user_name=self._payments_username,
+            pending_count=len(list(pending_items)),
             overdue_payments=overdue_payments,
         )
         return overdue_payments

@@ -145,6 +145,7 @@ def alert_with_stack(title: str, detail_fields: Dict[str, Optional[str]], stack:
 
 def send_overdue_summary(
     user_name: str,
+    pending_count: int,
     overdue_payments: list[Dict[str, Any]],
 ):
     """Publica en Slack el resumen del job nocturno de pagos vencidos."""
@@ -163,7 +164,7 @@ def send_overdue_summary(
 
     blocks = [
         _header("📣 Resumen job pagos vencidos"),
-        _section_md(f"*Fecha:* `{run_date}` · *Encontrados:* `{count}` · *Marcados overdue:* `{count}`"),
+        _section_md(f"*Fecha:* `{run_date}` · *Encontrados:* `{pending_count}` · *Marcados overdue:* `{count}`"),
         _fields({"Monto total afectado": _cop(total)}),
         _divider(),
     ]

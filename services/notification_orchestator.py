@@ -176,6 +176,7 @@ class Notifications:
         self,
         *,
         user_name: str,
+        pending_count: int,
         overdue_payments: list[dict[str, Any]],
     ) -> Dict[str, Union[str, Exception]]:
         results: Dict[str, Union[str, Exception]] = {}
