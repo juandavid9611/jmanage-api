@@ -2,11 +2,12 @@ import os
 import json
 import time
 import hashlib
+from typing import Union
 from urllib import request, error
 
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 APP_NAME = os.environ.get("APP_NAME", "SportsManagement")
-ENV = os.environ.get("SM_ENV", "dev")
+ENV = os.environ.get("ENV", "dev")
 
 # Evita spam del mismo error (por contenedor caliente de Lambda)
 _LAST_SENT: dict[str, float] = {}
@@ -72,7 +73,6 @@ def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: st
     except error.URLError as e:
         print("[slack_alerts] Failed sending to Slack:", e)
 
-from typing import Union
 def alert_with_stack(title: str, detail_fields: dict[str, Union[str, None]], stack: str, level="critical"):
     """
     Construye un bloque de detalles en Markdown, aplica deduplicación y envía.
