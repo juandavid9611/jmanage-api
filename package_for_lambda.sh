@@ -72,7 +72,7 @@ rm -rf "${BUILD_DIR}"
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo ">> Commit & push (opcional)"
   git add .
-  git commit -m "Major: Upgrade to Python 3.12.6" || true
+  git commit -m "Add __pycache__ to .gitignore" || true
   git push || true
 fi
 
