@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 if _use_mangum():
+    print(">> Using Mangum handler for AWS Lambda")
     handler = Mangum(app)
 
 if __name__ == "__main__":
