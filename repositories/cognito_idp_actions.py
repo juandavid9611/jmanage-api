@@ -45,6 +45,8 @@ class CognitoIdentityProviderWrapper:
         :param user_name: The user name to use when calculating the hash.
         :return: The secret hash.
         """
+        if self.client_secret is None:
+            raise ValueError("client_secret must not be None to calculate secret hash.")
         key = self.client_secret.encode()
         msg = bytes(user_name + self.client_id, "utf-8")
         secret_hash = base64.b64encode(
