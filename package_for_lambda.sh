@@ -1,79 +1,70 @@
+# package_for_lambda.sh
 #!/bin/bash
+set -euo pipefail
 
-# Exit if any command fails
-set -eux pipefail
-
-# --- Config ---
 ZIP_NAME="lambda_function.zip"
 BUILD_DIR=".lambda_build"
 
-# Directorios de código a incluir (ajusta si agregas más)
-SRC_DIRS=(
-  "api"
-  "builders"
-  "core"
-  "repositories"
-  "services"
-  "utils"
-)
+# Use space-separated strings (not arrays)
+SRC_DIRS="api builders core repositories services utils"
+ROOT_PY_FILES="app.py auth.py di.py JWTBearer.py"
 
-# Archivos sueltos en la raíz a incluir
-ROOT_PY_FILES=(
-  "app.py"
-  "auth.py"
-  "di.py"
-  "JWTBearer.py"
-)
+IMAGE="public.ecr.aws/sam/build-python3.12:latest"
+# Match your Lambda architecture: X86_64 -> linux/amd64, ARM_64 -> linux/arm64
+PLATFORM="${PLATFORM:-linux/amd64}"
 
-# --- Preparación ---
-echo ">> Limpiando artefactos previos"
 rm -f "${ZIP_NAME}" || true
-rm -rf "${BUILD_DIR}"
-mkdir -p "${BUILD_DIR}"
+rm -rf "${BUILD_DIR}" || true
 
-# --- Copiar código fuente ---
-echo ">> Copiando código fuente"
-for d in "${SRC_DIRS[@]}"; do
-  if [[ -d "$d" ]]; then
-    rsync -a "$d"/ "${BUILD_DIR}/${d}/" \
-      --exclude "__pycache__" \
-      --exclude "*.pyc" \
-      --exclude ".DS_Store"
-  fi
-done
+docker run --rm \
+  --platform "${PLATFORM}" \
+  -v "$PWD":/workspace \
+  -w /workspace \
+  -e SRC_DIRS="$SRC_DIRS" \
+  -e ROOT_PY_FILES="$ROOT_PY_FILES" \
+  -e BUILD_DIR="$BUILD_DIR" \
+  -e ZIP_NAME="$ZIP_NAME" \
+  "${IMAGE}" \
+  bash -lc '
+    set -eux
 
-for f in "${ROOT_PY_FILES[@]}"; do
-  if [[ -f "$f" ]]; then
-    rsync -a "$f" "${BUILD_DIR}/"
-  fi
-done
+    rm -rf "$BUILD_DIR" && mkdir -p "$BUILD_DIR"
 
-# --- Instalar dependencias ---
-# Nota: si estás en macOS/Windows y requieres wheels manylinux para Lambda,
-# considera construir en Docker o usar --platform. Para flujo simple:
-echo ">> Instalando dependencias en ${BUILD_DIR}"
-if [[ -f "requirements.txt" ]]; then
-  pip install -t "${BUILD_DIR}" -r requirements.txt
-fi
+    # 1) Install runtime deps with Linux wheels
+    python -m pip install -U pip wheel setuptools
+    pip install --only-binary=:all: -r requirements.txt -t "$BUILD_DIR"
 
-# --- Empaquetar ---
-echo ">> Creando zip ${ZIP_NAME}"
-(
-  cd "${BUILD_DIR}"
-  # -x para excluir basura en el zip
-  zip -r "../${ZIP_NAME}" . -x "*.DS_Store" -x "*__pycache__*" -x "*.pyc"
-)
+    # 2) Copy selected source paths
+    for d in $SRC_DIRS; do
+      if [ -d "$d" ]; then
+        mkdir -p "$BUILD_DIR/$d"
+        rsync -a "$d"/ "$BUILD_DIR/$d"/ \
+          --exclude "__pycache__" --exclude "*.pyc" --exclude ".DS_Store"
+      fi
+    done
 
-# --- Limpieza ---
-echo ">> Limpiando build"
-rm -rf "${BUILD_DIR}"
+    for f in $ROOT_PY_FILES; do
+      if [ -f "$f" ]; then
+        rsync -a "$f" "$BUILD_DIR"/
+      fi
+    done
 
+    # 3) Prune caches
+    find "$BUILD_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} + || true
+    find "$BUILD_DIR" -name "*.pyc" -delete || true
+
+    # 4) Sanity check pydantic-core is Linux .so (optional)
+    ls "$BUILD_DIR"/pydantic_core/_pydantic_core*.so >/dev/null 2>&1
+
+    # 5) Create final zip at repo root
+    (cd "$BUILD_DIR" && zip -qr "../$ZIP_NAME" .)
+  '
 # --- Git (opcional) ---
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo ">> Commit & push (opcional)"
   git add .
-  git commit -m "Add __pycache__ to .gitignore" || true
+  git commit -m "Fix payment request creation. Remove user_metrics from user dict" || true
   git push || true
 fi
 
-echo "✅ Listo: ${ZIP_NAME} creado."
+echo "✅ Built ${ZIP_NAME} (platform=${PLATFORM})."

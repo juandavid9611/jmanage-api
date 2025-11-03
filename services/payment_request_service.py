@@ -216,6 +216,8 @@ class PaymentRequestService:
         return fields_changed
 
     def _get_new_payment_request(self, bulk_item: BulkPutPaymentRequest, user: dict[str, Any], created_time: int) -> dict[str, Any]:
+        # TODO Clean user dict from unneeded attributes
+        user.pop("user_metrics", None)
         return {
             "id": f"{uuid4().hex}",
             "create_date": bulk_item.createDate,

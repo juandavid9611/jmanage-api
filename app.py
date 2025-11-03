@@ -43,13 +43,12 @@ def create_app() -> FastAPI:
     app.include_router(workspaces_router)
     app.include_router(friendly_scripts_router)
     app.include_router(scheduled_router)
-    locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
+    # locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
     return app
 
 app = create_app()
 
 if _use_mangum():
-    print(">> Using Mangum handler for AWS Lambda")
     handler = Mangum(app)
 
 if __name__ == "__main__":
