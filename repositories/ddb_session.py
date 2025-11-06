@@ -18,3 +18,6 @@ def tour_table():
 
 def workspace_table():
     return ddb_resource().Table(os.environ.get("WORKSPACE_TABLE_NAME"))
+
+def product_table():
+    return ddb_resource().Table(os.environ.get("PRODUCT_TABLE_NAME"))
