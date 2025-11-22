@@ -15,6 +15,10 @@ from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
 from repositories.notifications.magicbell_impl import MagicBellNotificationSender
 from repositories.notifications.courier_email_impl import CourierNotificationSender
 from services.workspace_service import WorkspaceService
+from services.product_service import ProductService
+from repositories.product_repo_ddb import ProductRepo
+from services.order_service import OrderService
+from repositories.order_repo_ddb import OrderRepo
 
 
 def get_notification_orchestator() -> Notifications:
@@ -55,3 +59,13 @@ def get_workspace_service() -> WorkspaceService:
     repo = WorkspaceRepo()
     user_svc = get_user_service()
     return WorkspaceService(repo, user_svc=user_svc)
+
+
+def get_product_service() -> ProductService:
+    repo = ProductRepo()
+    s3 = S3Adapter()
+    return ProductService(repo, s3)
+
+def get_order_service() -> OrderService:
+    repo = OrderRepo()
+    return OrderService(repo)

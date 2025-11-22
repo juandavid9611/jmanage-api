@@ -81,3 +81,14 @@ class S3Adapter:
     ) -> dict[str, str]:
         key = self._kb.user_profile_photos(user_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+    
+    def presign_product_image_put(
+        self,
+        *,
+        product_id: str,
+        filename: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> dict[str, str]:
+        key = self._kb.product_image(product_id, filename)
+        return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
