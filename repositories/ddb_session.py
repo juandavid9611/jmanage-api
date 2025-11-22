@@ -21,3 +21,6 @@ def workspace_table():
 
 def product_table():
     return ddb_resource().Table(os.environ.get("PRODUCT_TABLE_NAME"))
+
+def order_table():
+    return ddb_resource().Table(os.environ.get("ORDER_TABLE_NAME"))

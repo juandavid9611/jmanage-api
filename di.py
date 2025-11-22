@@ -17,6 +17,8 @@ from repositories.notifications.courier_email_impl import CourierNotificationSen
 from services.workspace_service import WorkspaceService
 from services.product_service import ProductService
 from repositories.product_repo_ddb import ProductRepo
+from services.order_service import OrderService
+from repositories.order_repo_ddb import OrderRepo
 
 
 def get_notification_orchestator() -> Notifications:
@@ -61,4 +63,9 @@ def get_workspace_service() -> WorkspaceService:
 
 def get_product_service() -> ProductService:
     repo = ProductRepo()
-    return ProductService(repo)
+    s3 = S3Adapter()
+    return ProductService(repo, s3)
+
+def get_order_service() -> OrderService:
+    repo = OrderRepo()
+    return OrderService(repo)

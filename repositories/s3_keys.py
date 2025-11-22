@@ -45,3 +45,10 @@ class KeyBuilder:
         {env}/users/{user_id}/profile_photos/{filename}
         """
         return join(self.user_root(user_id), "profile_photos", _clean(filename))
+    
+    def product_image(self, product_id: str, filename: str) -> str:
+        """
+        Full object key under the product images prefix, including filename.
+        {env}/products/{product_id}/{filename}
+        """
+        return join(self.env, "products", _clean(product_id), _clean(filename))
