@@ -14,6 +14,7 @@ from api.friendly_scripts import router as friendly_scripts_router
 from api.products import router as products_router
 from api.products import search_router as search_product_router
 from api.orders import router as orders_router
+from api.memberships import router as memberships_router
 from core.error_handlers import install_error_handlers
 from core.logging_config import configure_logging
 from core.request_context import RequestContextMiddleware
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(products_router)
     app.include_router(search_product_router)
     app.include_router(orders_router)
+    app.include_router(memberships_router)
     # locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
     return app
 

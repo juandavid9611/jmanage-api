@@ -25,22 +25,22 @@ class PaymentRequestService:
         }
         self._payments_username = "Vittoria CD Pagos"
 
-    def get(self, payment_request_id: str) -> dict[str, Any] | None:
-        item = self.repo.get(payment_request_id)
+    def get(self, payment_request_id: str, account_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(payment_request_id, account_id)
         if item:
             return self._map_payment_request(item)
         return None
 
-    def list_payment_requests(self, *, user_id: str | None = None, group: str | None = None) -> list[dict[str, Any]]:
+    def list_payment_requests(self, account_id: str, *, user_id: str | None = None, group: str | None = None) -> list[dict[str, Any]]:
         if user_id:
-            items = self.repo.list_by_user(user_id)
+            items = self.repo.list_by_user(user_id, account_id)
         elif group:
-            items = self.repo.list_by_group(group)
+            items = self.repo.list_by_group(group, account_id)
         else:
-            items = self.repo.list_all()
+            items = self.repo.list_all(account_id)
         return [self._map_payment_request(i, get_presigned_url=False) for i in items]
 
-    def bulk_create(self, bulk_item: BulkPutPaymentRequest) -> list[dict[str, Any]]:
+    def bulk_create(self, bulk_item: BulkPutPaymentRequest, account_id: str) -> list[dict[str, Any]]:
         if bulk_item is None or not hasattr(bulk_item, "paymentRequestTo") or not bulk_item.paymentRequestTo:
             raise ValueError("No users provided for payment request creation.")
 
@@ -48,7 +48,7 @@ class PaymentRequestService:
         created_time = int(time())
         for user in bulk_item.paymentRequestTo:
             #TODO User URL is create with GET presigned url, should be populated later with a GET user with other attributes
-            new_payment_request = self._get_new_payment_request(bulk_item, user, created_time)
+            new_payment_request = self._get_new_payment_request(bulk_item, user, created_time, account_id)
             self.repo.put(new_payment_request)
             self.notifier.payment_created(
                 email=user["email"],
@@ -60,16 +60,16 @@ class PaymentRequestService:
             new_payment_requests.append(self._map_payment_request(new_payment_request, get_presigned_url=False))
         return new_payment_requests
 
-    def update(self, payment_request_id: str, item: BulkPutPaymentRequest) -> dict[str, Any] | None:
-        existing = self.get(payment_request_id)
+    def update(self, payment_request_id: str, account_id: str, item: BulkPutPaymentRequest) -> dict[str, Any] | None:
+        existing = self.get(payment_request_id, account_id)
         if not existing:
             return None
         updates = self._get_needed_updates(item)
         if not updates:
             return existing
-        self.repo.update(payment_request_id, updates)
+        self.repo.update(payment_request_id, account_id, updates)
         user = item.paymentRequestTo[0]
-        new_item = self.get(payment_request_id)
+        new_item = self.get(payment_request_id, account_id)
         if not new_item:
             raise ValueError(f"Payment Request {payment_request_id} not found after update.")
         notification_fields_changed = self._get_notification_fields_changed(existing, new_item)
@@ -82,12 +82,12 @@ class PaymentRequestService:
             )
         return new_item
 
-    def delete(self, payment_request_id: str) -> None:
-        self.repo.delete(payment_request_id)
+    def delete(self, payment_request_id: str, account_id: str) -> None:
+        self.repo.delete(payment_request_id, account_id)
 
-    def generate_put_presigned_urls(self, payment_request_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
+    def generate_put_presigned_urls(self, payment_request_id: str, account_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
         presigned_urls = {}
-        payment_request = self.get(payment_request_id)
+        payment_request = self.get(payment_request_id, account_id)
         if not payment_request:
             raise ValueError(f"Payment Request {payment_request_id} not found")
         user_id = payment_request["userId"]
@@ -101,6 +101,7 @@ class PaymentRequestService:
                 raise ValueError("File 'file_name' and 'content_type' cannot be empty.")
 
             result = self.s3.presign_invoice_put(
+                account_id=account_id,
                 user_id=user_id, 
                 payment_request_id=payment_request_id, 
                 filename=file_name, 
@@ -109,23 +110,24 @@ class PaymentRequestService:
             presigned_urls[file_name] = result["url"]
         return presigned_urls
 
-    def request_payment_request_approval(self, payment_request_id: str, file_names: list[str]) -> str:
-        existing = self.get(payment_request_id)
+    def request_payment_request_approval(self, payment_request_id: str, account_id: str, file_names: list[str]) -> str:
+        existing = self.get(payment_request_id, account_id)
         if not existing:
             raise ValueError(f"Payment Request {payment_request_id} not found")
         images = []
         for file_name in file_names:
-            key = self.s3._kb.invoice_file(existing["userId"], payment_request_id, file_name)
+            key = self.s3._kb.invoice_file(account_id, existing["userId"], payment_request_id, file_name)
             images.append(key)
         self.repo.update(
             payment_request_id, 
+            account_id,
             {
                 "payment_status": PaymentRequestStatus.APPROVAL_PENDING,
                 "images": images
             }
         )
         
-        new_item = self.get(payment_request_id)
+        new_item = self.get(payment_request_id, account_id)
         if not new_item:
             raise ValueError(f"Payment Request {payment_request_id} not found after update.")
         user = existing["paymentRequestTo"]
@@ -215,11 +217,12 @@ class PaymentRequestService:
                 fields_changed.append({"name": field, "old_value": old_payment_request[field], "new_value": new_payment_request[field]})
         return fields_changed
 
-    def _get_new_payment_request(self, bulk_item: BulkPutPaymentRequest, user: dict[str, Any], created_time: int) -> dict[str, Any]:
+    def _get_new_payment_request(self, bulk_item: BulkPutPaymentRequest, user: dict[str, Any], created_time: int, account_id: str) -> dict[str, Any]:
         # TODO Clean user dict from unneeded attributes
         user.pop("user_metrics", None)
         return {
             "id": f"{uuid4().hex}",
+            "account_id": account_id,
             "create_date": bulk_item.createDate,
             "due_date": bulk_item.dueDate,
             "concept": bulk_item.concept,

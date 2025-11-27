@@ -9,37 +9,37 @@ class ProductService:
         self.repo = repo
         self.s3 = s3
 
-    def create_product(self, data: ProductCreate) -> ProductOut:
-        raw = self.repo.create(data.model_dump(by_alias=False))
+    def create_product(self, data: ProductCreate, account_id: str) -> ProductOut:
+        raw = self.repo.create(data.model_dump(by_alias=False), account_id)
         return self._map_product(raw)
     
-    def list_products(self) -> list[ProductOut]:
-        items = self.repo.list_all()
+    def list_products(self, account_id: str) -> list[ProductOut]:
+        items = self.repo.list_all(account_id)
         return [self._map_product(it) for it in items]
 
-    def get_product(self, product_id: str, get_presigned_url: bool = True) -> Optional[ProductOut]:
-        raw = self.repo.get_by_id(product_id)
+    def get_product(self, product_id: str, account_id: str, get_presigned_url: bool = True) -> Optional[ProductOut]:
+        raw = self.repo.get_by_id(product_id, account_id)
         return self._map_product(raw, get_presigned_url) if raw else None
 
-    def search_products(self, query: str | None, filters: dict, sort_by: str | None, limit: int, next_token: dict | None):
-        items, token = self.repo.search(query, filters, sort_by, limit, next_token)
+    def search_products(self, account_id: str, query: str | None, filters: dict, sort_by: str | None, limit: int, next_token: dict | None):
+        items, token = self.repo.search(account_id, query, filters, sort_by, limit, next_token)
         mapped = [self._map_product(it) for it in items]
         return {"results": mapped, "limit": limit, "nextToken": token}
 
-    def update_product(self, product_id: str, data: ProductUpdate) -> Optional[ProductOut]:
+    def update_product(self, product_id: str, account_id: str, data: ProductUpdate) -> Optional[ProductOut]:
         update_data = data.model_dump(exclude_none=True, by_alias=False)
         # Exclude images from update - use add_images endpoint instead
         update_data.pop("images", None)
-        raw = self.repo.update(product_id, update_data)
+        raw = self.repo.update(product_id, account_id, update_data)
         return self._map_product(raw) if raw else None
 
-    def delete_product(self, product_id: str) -> bool:
-        return self.repo.delete(product_id)
+    def delete_product(self, product_id: str, account_id: str) -> bool:
+        return self.repo.delete(product_id, account_id)
     
-    def generate_put_presigned_urls(self, product_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
+    def generate_put_presigned_urls(self, product_id: str, account_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
         """Generate presigned URLs for uploading product images to S3"""
         presigned_urls = {}
-        product = self.get_product(product_id)
+        product = self.get_product(product_id, account_id)
         if not product:
             raise ValueError(f"Product {product_id} not found")
         
@@ -53,6 +53,7 @@ class ProductService:
                 raise ValueError("File 'file_name' and 'content_type' cannot be empty.")
             
             result = self.s3.presign_product_image_put(
+                account_id=account_id,
                 product_id=product_id,
                 filename=file_name,
                 content_type=file_content_type
@@ -60,16 +61,16 @@ class ProductService:
             presigned_urls[file_name] = result["url"]
         return presigned_urls
     
-    def add_images(self, product_id: str, file_names: list[str]) -> list[str]:
+    def add_images(self, product_id: str, account_id: str, file_names: list[str]) -> list[str]:
         """Add image keys to product after successful upload"""
         # Get product without URL conversion to work with raw S3 keys
-        existing = self.get_product(product_id, get_presigned_url=False)
+        existing = self.get_product(product_id, account_id, get_presigned_url=False)
         if not existing:
             raise ValueError(f"Product {product_id} not found")
         
         images = []
         for file_name in file_names:
-            key = self.s3._kb.product_image(product_id, file_name)
+            key = self.s3._kb.product_image(account_id, product_id, file_name)
             images.append(key)
         
         # Get current images and append new ones (working with raw keys)
@@ -78,6 +79,7 @@ class ProductService:
         
         self.repo.update(
             product_id,
+            account_id,
             {"images": updated_images}
         )
         return images

@@ -19,11 +19,13 @@ def to_decimal(value: Any) -> Decimal:
 class OrderRepo:
     def __init__(self):
         self.table = order_table()
+        self._account_gsi = os.getenv("ORDER_ACCOUNT_GSI", "account_id_index")
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
-    def create(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def create(self, payload: Dict[str, Any], account_id: str) -> Dict[str, Any]:
+        """Create a new order for the specified account"""
         order_id = str(uuid.uuid4())
         now = self._now_iso()
         
@@ -40,6 +42,7 @@ class OrderRepo:
 
         item = {
             "id": order_id,
+            "account_id": account_id,
             "orderNumber": order_number,
             "createdAt": now,
             "taxes": to_decimal(payload.get("taxes", 0)),
@@ -65,24 +68,45 @@ class OrderRepo:
         self.table.put_item(Item=item)
         return item
 
-    def list_all(self) -> List[Dict[str, Any]]:
-        # In a real scenario, we would handle pagination and scanning properly
-        response = self.table.scan()
-        return response.get("Items", [])
+    def list_all(self, account_id: str) -> List[Dict[str, Any]]:
+        """List all orders for the specified account"""
+        try:
+            # Use GSI to query by account_id
+            response = self.table.query(
+                IndexName=self._account_gsi,
+                KeyConditionExpression=Key("account_id").eq(account_id)
+            )
+            return response.get("Items", [])
+        except Exception:
+            # Fallback to scan with filter if GSI doesn't exist yet
+            response = self.table.scan(
+                FilterExpression=Key("account_id").eq(account_id)
+            )
+            return response.get("Items", [])
 
-    def get_by_id(self, order_id: str) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, order_id: str, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get order by ID, validating it belongs to the account"""
         response = self.table.get_item(Key={"id": order_id})
-        return response.get("Item")
+        item = response.get("Item")
+        
+        # Validate account ownership
+        if item and item.get("account_id") != account_id:
+            return None
+            
+        return item
 
-    def update(self, order_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        # Simple update implementation
-        current = self.get_by_id(order_id)
+    def update(self, order_id: str, account_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update order, validating it belongs to the account"""
+        current = self.get_by_id(order_id, account_id)
         if not current:
             return None
             
         # Merge payload into current
         # Note: This is a simplified update. For production, use UpdateExpression
         updated_item = {**current, **payload}
+        
+        # Ensure account_id cannot be changed
+        updated_item["account_id"] = account_id
         
         # Ensure numeric fields are Decimal in the updated item
         numeric_fields = ["taxes", "subtotal", "shipping", "discount", "totalAmount"]
@@ -93,6 +117,12 @@ class OrderRepo:
         self.table.put_item(Item=updated_item)
         return updated_item
 
-    def delete(self, order_id: str) -> bool:
+    def delete(self, order_id: str, account_id: str) -> bool:
+        """Delete order, validating it belongs to the account"""
+        # Verify ownership before deleting
+        current = self.get_by_id(order_id, account_id)
+        if not current:
+            return False
+            
         self.table.delete_item(Key={"id": order_id})
         return True

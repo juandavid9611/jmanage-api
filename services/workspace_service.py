@@ -14,17 +14,17 @@ class WorkspaceService:
         self._booker_bool_fields = {"approved", "late", "yellowCard", "redCard", "mvp"}
         self._booker_int_fields = {"goals", "assists"}
 
-    def get(self, workspace_id: str) -> dict[str, Any] | None:
-        item = self.repo.get(workspace_id)
+    def get(self, workspace_id: str, account_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(workspace_id, account_id)
         if item:
             return item
         return None
 
-    def get_related(self, user) -> list[dict[str, Any]]:
-        items = self.repo.list_all()
+    def get_related(self, user, account_id: str) -> list[dict[str, Any]]:
+        items = self.repo.list_all(account_id)
         if user["custom:role"] == "admin":
             return [item for item in items]
-        user_db = self.user_svc.get(user["sub"])
+        user_db = self.user_svc.get(user["sub"], account_id)
         if not user_db:
             raise ValueError(f"User {user['sub']} not found")
         related_items = []
@@ -35,33 +35,34 @@ class WorkspaceService:
                 related_items.append(item)
         return related_items
 
-    def list_workspaces(self) -> list[dict[str, Any]]:
-        return [item for item in self.repo.list_all()]
+    def list_workspaces(self, account_id: str) -> list[dict[str, Any]]:
+        return [item for item in self.repo.list_all(account_id)]
 
-    def create(self, item: PutWorkspace) -> dict[str, Any]:
-        new_workspace = self._get_new_workspace(item)
+    def create(self, item: PutWorkspace, account_id: str) -> dict[str, Any]:
+        new_workspace = self._get_new_workspace(item, account_id)
         self.repo.put(new_workspace)
         return new_workspace
 
-    def update(self, workspace_id: str, item: PutWorkspace) -> dict[str, Any] | None:
-        existing = self.repo.get(workspace_id)
+    def update(self, workspace_id: str, account_id: str, item: PutWorkspace) -> dict[str, Any] | None:
+        existing = self.repo.get(workspace_id, account_id)
         if not existing:
             return None
         updates = self._get_needed_updates(item)
         if not updates:
             return existing
-        self.repo.update(workspace_id, updates)
-        new_item = self.repo.get(workspace_id)
+        self.repo.update(workspace_id, account_id, updates)
+        new_item = self.repo.get(workspace_id, account_id)
         if not new_item:
             raise ValueError(f"Workspace {workspace_id} not found after update.")
         return new_item
 
-    def delete(self, tour_id: str) -> None:
-        self.repo.delete(tour_id)
+    def delete(self, tour_id: str, account_id: str) -> None:
+        self.repo.delete(tour_id, account_id)
 
-    def _get_new_workspace(self, item: PutWorkspace) -> dict[str, Any]:
+    def _get_new_workspace(self, item: PutWorkspace, account_id: str) -> dict[str, Any]:
         return {
             "id": item.id,
+            "account_id": account_id,
             "name": item.name,
             "logo": item.logo,
             "plan": item.plan,

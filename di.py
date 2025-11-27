@@ -19,6 +19,8 @@ from services.product_service import ProductService
 from repositories.product_repo_ddb import ProductRepo
 from services.order_service import OrderService
 from repositories.order_repo_ddb import OrderRepo
+from services.membership_service import MembershipService
+from repositories.membership_repo_ddb import MembershipRepo
 
 
 def get_notification_orchestator() -> Notifications:
@@ -69,3 +71,7 @@ def get_product_service() -> ProductService:
 def get_order_service() -> OrderService:
     repo = OrderRepo()
     return OrderService(repo)
+
+def get_membership_service() -> MembershipService:
+    repo = MembershipRepo()
+    return MembershipService(repo)

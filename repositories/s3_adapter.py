@@ -51,44 +51,48 @@ class S3Adapter:
     def presign_invoice_put(
         self,
         *,
+        account_id: str,
         user_id: str,
         payment_request_id: str,
         filename: str,
         content_type: str,
         expires_in: int = 3600,
     ) -> dict[str, str]:
-        key = self._kb.invoice_file(user_id, payment_request_id, filename)
+        key = self._kb.invoice_file(account_id, user_id, payment_request_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
 
     def presign_tour_image_put(
         self,
         *,
+        account_id: str,
         tour_id: str,
         filename: str,
         content_type: str,
         expires_in: int = 3600,
     ) -> dict[str, str]:
-        key = self._kb.tour_image(tour_id, filename)
+        key = self._kb.tour_image(account_id, tour_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
     
     def presign_user_profile_photo_put(
         self,
         *,
+        account_id: str,
         user_id: str,
         filename: str,
         content_type: str,
         expires_in: int = 3600,
     ) -> dict[str, str]:
-        key = self._kb.user_profile_photos(user_id, filename)
+        key = self._kb.user_profile_photos(account_id, user_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
     
     def presign_product_image_put(
         self,
         *,
+        account_id: str,
         product_id: str,
         filename: str,
         content_type: str,
         expires_in: int = 3600,
     ) -> dict[str, str]:
-        key = self._kb.product_image(product_id, filename)
+        key = self._kb.product_image(account_id, product_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)

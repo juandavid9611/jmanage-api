@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
 
 from api.schemas.products import ProductCreate, ProductOut, ProductUpdate
 from api.schemas.files import FileSpec
-from auth import PermissionChecker
+from auth import PermissionChecker, get_account_id
 from di import get_product_service
 from services.product_service import ProductService
 
@@ -24,6 +24,7 @@ async def search_products(
     sortBy: str | None = Query(None, regex="^(featured|newest|priceDesc|priceAsc)$"),
     limit: int = Query(20, ge=1, le=100),
     nextToken: dict[str, Any] | None = None,
+    account_id: str = Depends(get_account_id),
     svc: ProductService = Depends(get_product_service),
 ):
     filters = {
@@ -34,40 +35,59 @@ async def search_products(
         "max_price": maxPrice,
         "min_rating": minRating,
     }
-    result = svc.search_products(q, filters, sortBy, limit, nextToken)
+    result = svc.search_products(account_id, q, filters, sortBy, limit, nextToken)
     return result
     #return get_fake_response()
 
 @router.get("", dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
-async def list_products(svc: ProductService = Depends(get_product_service)):
-    return svc.list_products()
+async def list_products(
+    account_id: str = Depends(get_account_id),
+    svc: ProductService = Depends(get_product_service)
+):
+    return svc.list_products(account_id)
 
 @router.post("", response_model=ProductOut, dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))])
-async def create_product(payload: ProductCreate, svc: ProductService = Depends(get_product_service)):
-    product = svc.create_product(payload)
+async def create_product(
+    payload: ProductCreate, 
+    account_id: str = Depends(get_account_id),
+    svc: ProductService = Depends(get_product_service)
+):
+    product = svc.create_product(payload, account_id)
     return product
 
 
 @router.get("/{product_id}", dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
-async def get_product(product_id: str, svc: ProductService = Depends(get_product_service)):
-    p = svc.get_product(product_id)
+async def get_product(
+    product_id: str, 
+    account_id: str = Depends(get_account_id),
+    svc: ProductService = Depends(get_product_service)
+):
+    p = svc.get_product(product_id, account_id)
     if not p:
         raise HTTPException(status_code=404, detail="Product not found")
     return p
-    print("Getting product:", product_id)
     # return get_fake_product()
 
 @router.put("/{product_id}", dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))])
-async def update_product(product_id: str, payload: ProductUpdate, svc: ProductService = Depends(get_product_service)):
-    item = svc.update_product(product_id, payload)
+async def update_product(
+    product_id: str, 
+    payload: ProductUpdate, 
+    account_id: str = Depends(get_account_id),
+    svc: ProductService = Depends(get_product_service)
+):
+    item = svc.update_product(product_id, account_id, payload)
     if not item:
         raise HTTPException(status_code=404, detail="Product not found or not updated")
     return item
 
 
 @router.delete("/{product_id}", dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))])
-async def delete_product(product_id: str, svc: ProductService = Depends(get_product_service)):
-    existing = svc.delete_product(product_id)
+async def delete_product(
+    product_id: str, 
+    account_id: str = Depends(get_account_id),
+    svc: ProductService = Depends(get_product_service)
+):
+    existing = svc.delete_product(product_id, account_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Product not found")
     return
@@ -76,15 +96,16 @@ async def delete_product(product_id: str, svc: ProductService = Depends(get_prod
 async def generate_product_presigned_urls(
     product_id: str,
     files: list[FileSpec] = Body(..., embed=False),
+    account_id: str = Depends(get_account_id),
     svc: ProductService = Depends(get_product_service)
 ):
     """Generate presigned URLs for uploading product images to S3"""
-    product = svc.get_product(product_id)
+    product = svc.get_product(product_id, account_id)
     if not product:
         raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
     
     try:
-        result = svc.generate_put_presigned_urls(product_id=product_id, files=files)
+        result = svc.generate_put_presigned_urls(product_id=product_id, account_id=account_id, files=files)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error generating presigned URLs: {str(e)}")
     
@@ -94,11 +115,12 @@ async def generate_product_presigned_urls(
 async def add_product_images(
     product_id: str,
     file_names: list[str] = Body(..., embed=False),
+    account_id: str = Depends(get_account_id),
     svc: ProductService = Depends(get_product_service)
 ):
     """Add image keys to product after successful upload to S3"""
     try:
-        added_images = svc.add_images(product_id, file_names)
+        added_images = svc.add_images(product_id, account_id, file_names)
         return {"added_images": added_images}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

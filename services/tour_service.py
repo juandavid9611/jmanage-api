@@ -21,41 +21,41 @@ class TourService:
         self._booker_bool_fields = {"approved", "late", "yellowCard", "redCard", "mvp"}
         self._booker_int_fields = {"goals", "assists"}
 
-    def get(self, tour_id: str) -> dict[str, Any] | None:
-        item = self.repo.get(tour_id)
+    def get(self, tour_id: str, account_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(tour_id, account_id)
         if item:
             return self._map_tour(item)
         return None
 
-    def list_tours(self, *, group: str | None = None, tour_type: str | None = None) -> list[dict[str, Any]]:
+    def list_tours(self, account_id: str, *, group: str | None = None, tour_type: str | None = None) -> list[dict[str, Any]]:
         if group:
-            items = self.repo.list_by_group(group)
+            items = self.repo.list_by_group(group, account_id)
         elif tour_type:
-            items = self.repo.list_by_type(tour_type)
+            items = self.repo.list_by_type(tour_type, account_id)
         else:
-            items = self.repo.list_all()
+            items = self.repo.list_all(account_id)
         return [self._map_tour(i) for i in items]
 
-    def create(self, item: PutTour) -> dict[str, Any]:
-        new_tour = self._get_new_tour(item)
+    def create(self, item: PutTour, account_id: str) -> dict[str, Any]:
+        new_tour = self._get_new_tour(item, account_id)
         self.repo.put(new_tour)
         return self._map_tour(new_tour)
 
-    def update(self, tour_id: str, item: PutTour) -> dict[str, Any] | None:
-        existing = self.repo.get(tour_id)
+    def update(self, tour_id: str, account_id: str, item: PutTour) -> dict[str, Any] | None:
+        existing = self.repo.get(tour_id, account_id)
         if not existing:
             return None
         updates = self._get_needed_updates(item)
         if not updates:
             return self._map_tour(existing)
-        self.repo.update(tour_id, updates)
-        new_item = self.repo.get(tour_id)
+        self.repo.update(tour_id, account_id, updates)
+        new_item = self.repo.get(tour_id, account_id)
         if not new_item:
             raise ValueError(f"Tour {tour_id} not found after update.")
         return self._map_tour(new_item)
 
-    def update_attributes(self, tour_id: str, **attrs) -> dict[str, Any] | None:
-        existing = self.repo.get(tour_id)
+    def update_attributes(self, tour_id: str, account_id: str, **attrs) -> dict[str, Any] | None:
+        existing = self.repo.get(tour_id, account_id)
         if not existing:
             return None
         updates: dict[str, Any] = {}
@@ -67,19 +67,19 @@ class TourService:
         if not updates:
             return self._map_tour(existing)
 
-        self.repo.update(tour_id, updates)
-        new_item = self.repo.get(tour_id)
+        self.repo.update(tour_id, account_id, updates)
+        new_item = self.repo.get(tour_id, account_id)
         if not new_item:
             raise ValueError(f"Tour {tour_id} not found after update.")
         return self._map_tour(new_item)
 
-    def delete(self, tour_id: str) -> None:
-        self.repo.delete(tour_id)
+    def delete(self, tour_id: str, account_id: str) -> None:
+        self.repo.delete(tour_id, account_id)
 
-    def generate_put_presigned_urls(self, tour_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
+    def generate_put_presigned_urls(self, tour_id: str, account_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
         # TODO failing with multiple files in different calls - check why
         presigned_urls = {}
-        tour = self.get(tour_id)
+        tour = self.get(tour_id, account_id)
         if not tour:
             raise ValueError(f"Tour {tour_id} not found")
         # TODO Extract into S3Adapter method or other service. Works for payments too
@@ -93,6 +93,7 @@ class TourService:
                 raise ValueError("File 'name' and 'content_type' cannot be empty.")
             
             result = self.s3.presign_tour_image_put(
+                account_id=account_id,
                 tour_id=tour_id, 
                 filename=file_name, 
                 content_type=file_content_type
@@ -100,24 +101,25 @@ class TourService:
             presigned_urls[file_name] = result["url"]
         return presigned_urls
 
-    def add_images(self, tour_id: str, file_names: list[str]) -> list[str]:
-        existing = self.get(tour_id)
+    def add_images(self, tour_id: str, account_id: str, file_names: list[str]) -> list[str]:
+        existing = self.get(tour_id, account_id)
         if not existing:
             raise ValueError(f"Tour {tour_id} not found")
         images = []
         for file_name in file_names:
-            key = self.s3._kb.tour_image( tour_id, file_name)
+            key = self.s3._kb.tour_image(account_id, tour_id, file_name)
             images.append(key)
         self.repo.update(
             tour_id, 
+            account_id,
             {
                 "images": images
             }
         )
         return images
 
-    def update_booker_property(self, tour_id: str, booker_id: str, patch_property: PatchProperty) -> dict[str, Any] | None:
-        existing = self.repo.get(tour_id)
+    def update_booker_property(self, tour_id: str, account_id: str, booker_id: str, patch_property: PatchProperty) -> dict[str, Any] | None:
+        existing = self.repo.get(tour_id, account_id)
         if not existing:
             return None
         bookers = existing.get("bookers", {})
@@ -135,12 +137,13 @@ class TourService:
         else:
             raise ValueError(f"Property {patch_property.name} not found")
         bookers[booker_id] = booker
-        self.repo.update(tour_id, {"bookers": bookers})
+        self.repo.update(tour_id, account_id, {"bookers": bookers})
         return bookers
 
-    def _get_new_tour(self, item: PutTour) -> dict[str, Any]:
+    def _get_new_tour(self, item: PutTour, account_id: str) -> dict[str, Any]:
         return {
             "id": item.id or f"tour_{uuid4().hex}",
+            "account_id": account_id,
             "tour_name": item.name,
             "images": item.images,
             "publish": item.publish,

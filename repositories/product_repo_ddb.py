@@ -30,31 +30,30 @@ def _tokens_from_name(name: str) -> List[str]:
     return [name.lower()] if name else []
 
 def _build_gsi_attrs(item: Dict[str, Any]) -> Dict[str, Any]:
-    # GSI1: categoría por created_at
+    # GSI1: account + category by created_at
+    account_id = item.get("account_id") or "_NO_ACCOUNT"
     category = item.get("category") or "_UNCAT"
     created_at = item.get("created_at") or _now_iso()
-    # GSI2: featured por total_sold desc -> usamos neg_total_sold
+    # GSI2: account + featured by total_sold desc -> usamos neg_total_sold
     neg_total_sold = _neg(item.get("total_sold", 0))
-    # GSI3: price
+    # GSI3: account + price
     price = to_decimal(item.get("price", 0))
-    # GSI5: tag/name search (elegimos 1 PK múltiple con tags y tokens de name)
-    # Para simplificar: guardamos solo el último "TAG#<tag>" usado al escribir.
-    # Si quieres múltiples entradas por tag, requiere escribir N ítems secundarios (fuera de alcance aquí).
+    # GSI5: account + tag/name search
     first_tag = (item.get("tags") or item.get("genders") or ["_NO_TAG"])[0]
     gsi = {
-        "gsi1_pk": f"CAT#{category}",
+        "gsi1_pk": f"ACCOUNT#{account_id}#CAT#{category}",
         "gsi1_sk": created_at,
-        "gsi2_pk": "FEATURED",
+        "gsi2_pk": f"ACCOUNT#{account_id}#FEATURED",
         "gsi2_sk": neg_total_sold,
-        "gsi3_pk": "PRICE",
+        "gsi3_pk": f"ACCOUNT#{account_id}#PRICE",
         "gsi3_sk": price,
-        "gsi5_pk": f"TAG#{str(first_tag).lower()}",
+        "gsi5_pk": f"ACCOUNT#{account_id}#TAG#{str(first_tag).lower()}",
         "gsi5_sk": created_at,
         "neg_total_sold": neg_total_sold,
     }
     return gsi
 
-def _choose_query_plan(query: Optional[str], filters: Dict[str, Any], sort_by: Optional[str]) -> Dict[str, Any]:
+def _choose_query_plan(account_id: str, query: Optional[str], filters: Dict[str, Any], sort_by: Optional[str]) -> Dict[str, Any]:
     category = filters.get("category")
     min_price = filters.get("min_price")
     max_price = filters.get("max_price")
@@ -62,7 +61,7 @@ def _choose_query_plan(query: Optional[str], filters: Dict[str, Any], sort_by: O
     if sort_by == "featured":
         return {
             "index": "GSI2_Featured",
-            "key": Key("gsi2_pk").eq("FEATURED"),
+            "key": Key("gsi2_pk").eq(f"ACCOUNT#{account_id}#FEATURED"),
             "range": None,
             "forward": False,
         }
@@ -71,13 +70,13 @@ def _choose_query_plan(query: Optional[str], filters: Dict[str, Any], sort_by: O
         if category:
             return {
                 "index": "GSI1_CategoryNewest",
-                "key": Key("gsi1_pk").eq(f"CAT#{category}"),
+                "key": Key("gsi1_pk").eq(f"ACCOUNT#{account_id}#CAT#{category}"),
                 "range": None,
                 "forward": False,
             }
         return {
             "index": "GSI1_CategoryNewest",
-            "key": Key("gsi1_pk").eq("CAT#_ALL"),
+            "key": Key("gsi1_pk").eq(f"ACCOUNT#{account_id}#CAT#_ALL"),
             "range": None,
             "forward": False,
         }
@@ -85,7 +84,7 @@ def _choose_query_plan(query: Optional[str], filters: Dict[str, Any], sort_by: O
     if sort_by in ("priceAsc", "priceDesc"):
         base: Dict[str, Any] = {
             "index": "GSI3_Price",
-            "key": Key("gsi3_pk").eq("PRICE"),
+            "key": Key("gsi3_pk").eq(f"ACCOUNT#{account_id}#PRICE"),
             "range": None,
         }
         if min_price is not None and max_price is not None:
@@ -103,7 +102,7 @@ def _choose_query_plan(query: Optional[str], filters: Dict[str, Any], sort_by: O
     if query:
         return {
             "index": "GSI5_TagSearch",
-            "key": Key("gsi5_pk").eq(f"TAG#{query.lower()}"),
+            "key": Key("gsi5_pk").eq(f"ACCOUNT#{account_id}#TAG#{query.lower()}"),
             "range": None,
             "forward": False,
         }
@@ -111,14 +110,14 @@ def _choose_query_plan(query: Optional[str], filters: Dict[str, Any], sort_by: O
     if category:
         return {
             "index": "GSI1_CategoryNewest",
-            "key": Key("gsi1_pk").eq(f"CAT#{category}"),
+            "key": Key("gsi1_pk").eq(f"ACCOUNT#{account_id}#CAT#{category}"),
             "range": None,
             "forward": False,
         }
 
     return {
         "index": "GSI2_Featured",
-        "key": Key("gsi2_pk").eq("FEATURED"),
+        "key": Key("gsi2_pk").eq(f"ACCOUNT#{account_id}#FEATURED"),
         "range": None,
         "forward": False,
     }
@@ -161,9 +160,11 @@ def _map_out(item: Dict[str, Any]) -> Dict[str, Any]:
 class ProductRepo:
     def __init__(self):
         self.table = product_table()
+        self._account_gsi = os.getenv("PRODUCT_ACCOUNT_GSI", "account_id_index")
 
     # CREATE
-    def create(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def create(self, payload: Dict[str, Any], account_id: str) -> Dict[str, Any]:
+        """Create a new product for the specified account"""
         product_id = str(uuid.uuid4())
         now = _now_iso()
         taxes = payload.get("taxes")
@@ -173,6 +174,7 @@ class ProductRepo:
             "pk": f"PRODUCT#{product_id}",
             "sk": "PRODUCT",
             "id": product_id,
+            "account_id": account_id,
             "created_at": now,
             "name": payload["name"],
             "category": payload["category"],
@@ -205,16 +207,26 @@ class ProductRepo:
         return item
 
     # READ
-    def get_by_id(self, product_id: str) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, product_id: str, account_id: str) -> Optional[Dict[str, Any]]:
+        """Get product by ID, validating it belongs to the account"""
         resp = self.table.get_item(Key={"pk": f"PRODUCT#{product_id}", "sk": "PRODUCT"})
-        return resp.get("Item")
+        item = resp.get("Item")
+        
+        # Validate account ownership
+        if item and item.get("account_id") != account_id:
+            return None
+            
+        return item
     
     # LIST ALL
-    def list_all(self) -> List[Dict[str, Any]]:
+    def list_all(self, account_id: str) -> List[Dict[str, Any]]:
+        """List all products for the specified account"""
         items = []
         exclusive_key = None
         while True:
-            kwargs = {"FilterExpression": Attr("sk").eq("PRODUCT")}
+            kwargs = {
+                "FilterExpression": Attr("sk").eq("PRODUCT") & Attr("account_id").eq(account_id)
+            }
             if exclusive_key:
                 kwargs["ExclusiveStartKey"] = exclusive_key
             resp = self.table.scan(**kwargs)
@@ -227,13 +239,15 @@ class ProductRepo:
     # SEARCH/LIST
     def search(
         self,
+        account_id: str,
         query: Optional[str],
         filters: Dict[str, Any],
         sort_by: Optional[str],
         limit: int,
         next_token: Optional[Dict[str, Any]] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        plan = _choose_query_plan(query, filters, sort_by)
+        """Search products within the specified account"""
+        plan = _choose_query_plan(account_id, query, filters, sort_by)
         key_condition = plan["key"]
         if plan.get("range") is not None:
             key_condition = key_condition & plan["range"]
@@ -271,9 +285,15 @@ class ProductRepo:
         return resp.get("Items", []), resp.get("LastEvaluatedKey")
 
     # UPDATE (PUT parcial: solo campos presentes)
-    def update(self, product_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update(self, product_id: str, account_id: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update product, validating it belongs to the account"""
         if not payload:
-            return self.get_by_id(product_id)
+            return self.get_by_id(product_id, account_id)
+
+        # Verify ownership
+        current = self.get_by_id(product_id, account_id)
+        if not current:
+            return None
 
         # Map camel->snake atributos internos
         mapping = {
@@ -315,8 +335,6 @@ class ProductRepo:
 
         # recomputar GSIs si cambian category/price/total_sold/tags/genders
         if any(n in names for n in ["#_category", "#_price", "#_total_sold", "#_genders", "#_tags"]):
-            current = self.get_by_id(product_id) or {}
-
             # Mezclamos el estado actual con los nuevos valores
             merged: Dict[str, Any] = {
                 **current,
@@ -335,7 +353,7 @@ class ProductRepo:
                 expr_set.append(f"#_{gk} = :{gk}")
 
         if not expr_set:
-            return self.get_by_id(product_id)
+            return self.get_by_id(product_id, account_id)
 
         update_expr = "SET " + ", ".join(expr_set)
 
@@ -349,6 +367,11 @@ class ProductRepo:
         return resp.get("Attributes")
 
     # DELETE
-    def delete(self, product_id: str) -> bool:
+    def delete(self, product_id: str, account_id: str) -> bool:
+        """Delete product, validating it belongs to the account"""
+        # Verify ownership before deleting
+        current = self.get_by_id(product_id, account_id)
+        if not current:
+            return False
         self.table.delete_item(Key={"pk": f"PRODUCT#{product_id}", "sk": "PRODUCT"})
         return True

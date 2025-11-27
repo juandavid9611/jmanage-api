@@ -21,59 +21,59 @@ class CalendarService:
         self._custom_mapping_keys = {"start": "event_start", "end": "event_end", "group": "user_group", "location": "event_location"}
         self._relevant_tour_fields = {"title", "event_start", "event_end", "event_location", "category", "group"}
 
-    def get(self, calendar_event_id: str) -> dict[str, Any] | None:
-        item = self.repo.get(calendar_event_id)
+    def get(self, calendar_event_id: str, account_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(calendar_event_id, account_id)
         if item:
             return self._map_calendar_event(item)
         return None
 
-    def list_calendar_events(self, *, group: str | None = None) -> list[dict[str, Any]]:
+    def list_calendar_events(self, account_id: str, *, group: str | None = None) -> list[dict[str, Any]]:
         if group:
-            items = self.repo.list_by_group(group)
+            items = self.repo.list_by_group(group, account_id)
         else:
-            items = self.repo.list_all()
+            items = self.repo.list_all(account_id)
         return [self._map_calendar_event(i) for i in items]
 
-    def create(self, calendar_item: PutCalendarEvent) -> dict[str, Any]:
+    def create(self, calendar_item: PutCalendarEvent, account_id: str) -> dict[str, Any]:
         put_tour = build_tour_from_calendar_event(calendar_item)
         calendar_item.tourId = put_tour.id
-        new_calendar_event = self._get_new_calendar_event(calendar_item)
+        new_calendar_event = self._get_new_calendar_event(calendar_item, account_id)
         self.repo.put(new_calendar_event)
 
-        users = self.user_svc.list_users(group=calendar_item.group, include_disabled=False)
+        users = self.user_svc.list_users(account_id, group=calendar_item.group, include_disabled=False)
         user_emails = [user["email"] for user in users]
         self.notifier.calendar_event_created(user_emails=user_emails, calendar_event=calendar_item)
         
         put_tour.calendarEventId = new_calendar_event["id"]
-        self.tour_svc.create(put_tour)
+        self.tour_svc.create(put_tour, account_id)
         
         return self._map_calendar_event(new_calendar_event)
 
-    def update(self, calendar_event_id: str, item: PutCalendarEvent) -> dict[str, Any] | None:
-        existing = self.repo.get(calendar_event_id)
+    def update(self, calendar_event_id: str, account_id: str, item: PutCalendarEvent) -> dict[str, Any] | None:
+        existing = self.repo.get(calendar_event_id, account_id)
         if not existing:
             return None
         updates = self._get_needed_updates(item)
         if not updates:
             return self._map_calendar_event(existing)
-        self.repo.update(calendar_event_id, updates)
-        new_item = self.repo.get(calendar_event_id)
+        self.repo.update(calendar_event_id, account_id, updates)
+        new_item = self.repo.get(calendar_event_id, account_id)
         if not new_item:
             raise ValueError(f"Calendar Event {calendar_event_id} not found after update.")
         
         tour_id = new_item.get("tour_id")
         if tour_id and self._relevant_changed(existing, new_item, self._relevant_tour_fields):
             attrs = self._tour_attrs_from_event(item)
-            self.tour_svc.update_attributes(tour_id, **attrs)
+            self.tour_svc.update_attributes(tour_id, account_id, **attrs)
 
         return self._map_calendar_event(new_item)
     
-    def delete(self, calendar_event_id: str) -> None:
-        self.repo.delete(calendar_event_id)
+    def delete(self, calendar_event_id: str, account_id: str) -> None:
+        self.repo.delete(calendar_event_id, account_id)
 
 
-    def participate(self, calendar_event_id: str, user, participate_data: ParticipationRequest) -> dict[str, Any] | None:
-        existing = self.repo.get(calendar_event_id)
+    def participate(self, calendar_event_id: str, account_id: str, user, participate_data: ParticipationRequest) -> dict[str, Any] | None:
+        existing = self.repo.get(calendar_event_id, account_id)
         if not existing:
             return None
         
@@ -90,12 +90,13 @@ class CalendarService:
         
         self.repo.update(
             calendar_event_id,
+            account_id,
             {"participants": participants}
         )
         
         tour_id = existing.get("tour_id")
         if tour_id:
-            tour = self.tour_svc.get(tour_id)
+            tour = self.tour_svc.get(tour_id, account_id)
             if not tour:
                 print(f"Tour {tour_id} not found")
             else:
@@ -118,7 +119,7 @@ class CalendarService:
                 if participate_data.value == False and user_id in bookers:
                     del bookers[user_id]
                 
-                self.tour_svc.update_attributes(tour_id, bookers=bookers)
+                self.tour_svc.update_attributes(tour_id, account_id, bookers=bookers)
         return existing
 
 
@@ -132,9 +133,10 @@ class CalendarService:
         item["createTour"] = item.pop("create_tour", None)
         return item
 
-    def _get_new_calendar_event(self, item: PutCalendarEvent) -> dict[str, Any]:
+    def _get_new_calendar_event(self, item: PutCalendarEvent, account_id: str) -> dict[str, Any]:
         return {
             "id": f"{uuid4().hex}",
+            "account_id": account_id,
             "all_day": item.allDay,
             "color": item.color,
             "description": item.description,
