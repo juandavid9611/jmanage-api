@@ -144,34 +144,39 @@ class PaymentRequestService:
         return payment_request_id
 
     def process_overdue_payments(self) -> list[dict[str, Any]]:
-        pending_items = self.repo.list_by_status(PaymentRequestStatus.PENDING)
-        datetime_now = datetime.now()
+        accounts = ['vittoriacd']
         overdue_payments = []
-        for item in pending_items:
-            due_datetime = datetime.fromisoformat(item["due_date"])
-            due_datetime = due_datetime.replace(tzinfo=None)
-            if due_datetime < datetime_now:
-                overdue_price = item.get("overdue_price", 0)
-                new_price = item["user_price"] if overdue_price == 0 else overdue_price
-                self.repo.update(
-                    item["id"],
-                    {
-                        "payment_status": PaymentRequestStatus.OVERDUE,
-                        "user_price": new_price
-                    }
-                )
-                overdue_payments.append({
+        for account_id in accounts:
+            pending_items = self.repo.list_by_status(PaymentRequestStatus.PENDING, account_id)
+            datetime_now = datetime.now()
+            account_overdue_payments = []
+            for item in pending_items:
+                due_datetime = datetime.fromisoformat(item["due_date"])
+                due_datetime = due_datetime.replace(tzinfo=None)
+                if due_datetime < datetime_now:
+                    overdue_price = item.get("overdue_price", 0)
+                    new_price = item["user_price"] if overdue_price == 0 else overdue_price
+                    self.repo.update(
+                        item["id"],
+                        {
+                            "payment_status": PaymentRequestStatus.OVERDUE,
+                            "user_price": new_price
+                        }
+                    )
+                    account_overdue_payments.append({
                         "id": item["id"], 
                         "concept": item["concept"],
                         "user_price": new_price,
                         "to_name": item["payment_request_to"]["name"],
                         "to_email": item["payment_request_to"]["email"]
                     })
-        self.notifier.overdue_payments_processed(
-            user_name=self._payments_username,
-            pending_count=len(list(pending_items)),
-            overdue_payments=overdue_payments,
-        )
+            overdue_payments.extend(account_overdue_payments)
+            self.notifier.overdue_payments_processed(
+                account_id=account_id,
+                user_name=self._payments_username,
+                pending_count=len(list(pending_items)),
+                overdue_payments=account_overdue_payments,
+            )
         return overdue_payments
 
     def _map_payment_request(self, item: dict[str, Any], get_presigned_url=True) -> dict[str, Any]:

@@ -8,18 +8,22 @@ from repositories.s3_adapter import S3Adapter
 from repositories.user_repo_ddb import UserRepo
 from api.schemas.users import CreateUser, PutUser, PutUserAvatar, PutUserMetrics, UserConfirmationStatus, UserStatus
 from services.notification_orchestator import Notifications
+from services.membership_service import MembershipService
 
 from services.tour_service import TourService
 
 class UserService:
     def __init__(
-            self, repo: UserRepo, s3: S3Adapter, notifier: Notifications, cog_wrapper: CognitoIdentityProviderWrapper, tour_svc: TourService
+            self, repo: UserRepo, s3: S3Adapter, notifier: Notifications,
+            cog_wrapper: CognitoIdentityProviderWrapper, tour_svc: TourService, 
+            membership_svc: MembershipService
             ):
         self.repo = repo
         self.notifier = notifier
         self.s3 = s3
         self.cog_wrapper = cog_wrapper
         self.tour_svc = tour_svc
+        self.membership_svc = membership_svc
         self._excluded_fields = ["id", "email"]
         self._custom_mapping_keys = {"name": "user_name", "status": "user_status", "group": "user_group"}
 
@@ -46,6 +50,15 @@ class UserService:
         #TODO Check if user exists in Cognito
         new_user = self._get_new_user(item, account_id)
         self.repo.put(new_user)
+        
+        # Create membership for the new user
+        self.membership_svc.create_membership(
+            user_id=item.id,
+            account_id=account_id,
+            role="user",
+            status="active"
+        )
+        
         self.notifier.send_user_welcome(email=item.email, name=item.name)
         return self._map_user(new_user)
 
@@ -70,6 +83,9 @@ class UserService:
     def delete(self, user_id: str, account_id: str) -> None:
         self.cog_wrapper.delete_user(user_id)
         self.repo.delete(user_id, account_id)
+        
+        # Delete all memberships for this user
+        self.membership_svc.delete_all_user_memberships(user_id)
 
     def enable(self, user_id: str, account_id: str) -> None:
         user = self.repo.get(user_id, account_id)
@@ -77,6 +93,9 @@ class UserService:
             raise ValueError(f"User {user_id} not found.")
         self.cog_wrapper.enable_user(user["email"])
         self.repo.update(user_id, account_id, {"user_status": UserStatus.ACTIVE})
+        
+        # Enable membership for this account
+        self.membership_svc.enable_membership(user_id, account_id)
 
     def disable(self, user_id: str, account_id: str) -> None:
         user = self.repo.get(user_id, account_id)
@@ -84,6 +103,9 @@ class UserService:
             raise ValueError(f"User {user_id} not found.")
         self.cog_wrapper.disable_user(user["email"])
         self.repo.update(user_id, account_id, {"user_status": UserStatus.DISABLED})
+        
+        # Disable membership for this account
+        self.membership_svc.disable_membership(user_id, account_id)
 
     def update_user_avatar_url(self, user_id: str, account_id: str, item: PutUserAvatar) -> dict[str, Any] | None:
         existing = self.repo.get(user_id, account_id)

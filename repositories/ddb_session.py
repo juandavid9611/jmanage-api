@@ -24,3 +24,6 @@ def product_table():
 
 def order_table():
     return ddb_resource().Table(os.environ.get("ORDER_TABLE_NAME"))
+
+def membership_table():
+    return ddb_resource().Table(os.environ.get("MEMBERSHIPS_TABLE_NAME"))

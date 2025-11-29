@@ -144,6 +144,7 @@ def alert_with_stack(title: str, detail_fields: dict[str, str | None], stack: st
 # ---------------------- Alertas ----------------------
 
 def send_overdue_summary(
+    account_id: str,
     user_name: str,
     pending_count: int,
     overdue_payments: list[dict[str, Any]],
@@ -164,6 +165,7 @@ def send_overdue_summary(
 
     blocks = [
         _header("📣 Resumen job pagos vencidos"),
+        _section_md(f"*Cuenta:* `{account_id}`"),
         _section_md(f"*Fecha:* `{run_date}` · *Encontrados:* `{pending_count}` · *Marcados overdue:* `{count}`"),
         _fields({"Monto total afectado": _cop(total)}),
         _divider(),

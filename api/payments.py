@@ -1,4 +1,4 @@
-from auth import PermissionChecker, get_account_id
+from auth import PermissionChecker, get_account_id, get_current_user, get_account_role
 from api.schemas.files import FileSpec
 from di import get_payment_request_service
 from fastapi import APIRouter, Body, Depends, Form, HTTPException
@@ -13,8 +13,14 @@ async def list_payment_requests(
     user_id: str | None = None, 
     workspace_id: str | None = None,
     account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
+    role: str = Depends(get_account_role),
     svc: PaymentRequestService = Depends(get_payment_request_service)
     ):
+    # Security: Non-admin users can only see their own payment requests
+    if role != 'admin':
+        user_id = current_user.get("sub")
+    
     items = svc.list_payment_requests(account_id, user_id=user_id, group=workspace_id)
     return items
 
