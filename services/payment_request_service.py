@@ -158,6 +158,7 @@ class PaymentRequestService:
                     new_price = item["user_price"] if overdue_price == 0 else overdue_price
                     self.repo.update(
                         item["id"],
+                        account_id,
                         {
                             "payment_status": PaymentRequestStatus.OVERDUE,
                             "user_price": new_price
