@@ -29,6 +29,8 @@ class CreateUser(BaseModel):
     id: str
     name: str
     email: str
+    accountId: str
+
 
 class PutUser(BaseModel):
     id: str

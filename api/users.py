@@ -20,11 +20,14 @@ async def list_users(
 
 @router.post("") 
 async def create_user(
-    create_user: CreateUser, 
-    account_id: str = Depends(get_account_id),
+    create_user: CreateUser,
     svc: UserService = Depends(get_user_service)
 ):
-    item = svc.create(create_user, account_id)
+    """
+    Public endpoint for user registration.
+    Creates user and initial membership in the specified account.
+    """
+    item = svc.create(create_user)
     return item
 
 @router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])

@@ -21,59 +21,44 @@ class UserRepo:
     def __init__(self):
         self._table = user_table()
         self._group_gsi = os.getenv("USER_GROUP_GSI", "group_index")
-        self._account_gsi = os.getenv("USER_ACCOUNT_GSI", "account_id_index")
 
     def get(self, user_id: str, account_id: str) -> dict[str, Any] | None:
-        """Get user by ID, validating it belongs to the account"""
-        resp = self._table.get_item(Key={"id": user_id})
-        item = resp.get("Item")
+        """Get user by ID
         
-        # Validate account ownership
-        if item and item.get("account_id") != account_id:
-            return None
-            
-        return item
+        Note: account_id parameter is kept for API compatibility but not used.
+        Access control is enforced at the service/API layer via memberships.
+        """
+        resp = self._table.get_item(Key={"id": user_id})
+        return resp.get("Item")
 
     def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
-        """List all users for the specified account"""
-        try:
-            from boto3.dynamodb.conditions import Key
-            resp = self._table.query(
-                IndexName=self._account_gsi,
-                KeyConditionExpression=Key("account_id").eq(account_id)
-            )
-            return resp.get("Items", [])
-        except Exception:
-            # Fallback to scan with filter
-            return _scan_all(
-                self._table,
-                FilterExpression=Attr("account_id").eq(account_id)
-            )
+        """List all users
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Returns all users. Account filtering should be done via memberships at service layer.
+        """
+        return _scan_all(self._table)
 
     def list_by_group(self, group: str, account_id: str) -> Iterable[dict[str, Any]]:
-        """List users by group within the specified account"""
+        """List users by group
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Returns all users in the group. Account filtering should be done via memberships at service layer.
+        """
         return _scan_all(
             self._table,
-            FilterExpression=Attr("user_group").eq(group) & Attr("account_id").eq(account_id)
+            FilterExpression=Attr("user_group").eq(group)
         )
 
     def put(self, item: dict[str, Any]) -> None:
-        """Put user item (account_id must be in item)"""
-        if "account_id" not in item:
-            raise ValueError("account_id is required")
         self._table.put_item(Item=item)
 
     def update(self, user_id: str, account_id: str, updates: dict[str, Any]) -> None:
-        """Update user, validating it belongs to the account"""
-        # Verify ownership
-        current = self.get(user_id, account_id)
-        if not current:
-            raise ValueError(f"User {user_id} not found in account {account_id}")
+        """Update user
         
-        # Prevent account_id from being changed
-        if "account_id" in updates:
-            del updates["account_id"]
-        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Access control is enforced at the service/API layer via memberships.
+        """
         update_expr_parts = []
         expr_attr_values = {}
         expr_attr_names = {}
@@ -95,9 +80,9 @@ class UserRepo:
         )
 
     def delete(self, user_id: str, account_id: str) -> None:
-        """Delete user, validating it belongs to the account"""
-        # Verify ownership before deleting
-        current = self.get(user_id, account_id)
-        if not current:
-            raise ValueError(f"User {user_id} not found in account {account_id}")
+        """Delete user
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Access control is enforced at the service/API layer via memberships.
+        """
         self._table.delete_item(Key={"id": user_id})

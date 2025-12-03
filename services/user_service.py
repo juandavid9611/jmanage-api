@@ -46,15 +46,15 @@ class UserService:
         cog_users = self.cog_wrapper.list_users()
         return self._map_users(items, cog_users)
 
-    def create(self, item: CreateUser, account_id: str) -> dict[str, Any]:
+    def create(self, item: CreateUser) -> dict[str, Any]:
         #TODO Check if user exists in Cognito
-        new_user = self._get_new_user(item, account_id)
+        new_user = self._get_new_user(item)
         self.repo.put(new_user)
         
         # Create membership for the new user
         self.membership_svc.create_membership(
             user_id=item.id,
-            account_id=account_id,
+            account_id=item.accountId,
             role="user",
             status="active"
         )
@@ -255,12 +255,11 @@ class UserService:
         sorted_top = sorted(top_goals_and_assists.values(), key=lambda x: (x["goals"], x["assists"]), reverse=True)
         return sorted_top
 
-    def _get_new_user(self, item: CreateUser, account_id: str) -> dict[str, Any]:
+    def _get_new_user(self, item: CreateUser) -> dict[str, Any]:
         created_time = int(time())
 
         return {
             "id": item.id,
-            "account_id": account_id,
             "user_name": item.name,
             "email": item.email,
             "user_status": UserStatus.ACTIVE,
