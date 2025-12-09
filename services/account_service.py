@@ -56,16 +56,21 @@ class AccountService:
         return self.repo.get(account_id)
     
     def get_user_accounts(self, user_id: str) -> list[dict[str, Any]]:
+        """Get all accounts a user belongs to via memberships"""
         memberships = self.membership_svc.get_user_memberships(user_id)
         
         accounts = []
-        for account_id in memberships.get("account_ids", []):
-            account = self.repo.get(account_id)
-            if account:
-                # Add membership info to account
-                account["membership"] = {
-                    "role": memberships.get("accounts_roles", {}).get(account_id)
-                }
-                accounts.append(account)
+        for membership in memberships:
+            account_id = membership.get("account_id")
+            if account_id:
+                account = self.repo.get(account_id)
+                if account:
+                    # Add membership info to account
+                    account["membership"] = {
+                        "role": membership.get("role"),
+                        "status": membership.get("status"),
+                        "workspace_id": membership.get("workspace_id")
+                    }
+                    accounts.append(account)
         
         return accounts

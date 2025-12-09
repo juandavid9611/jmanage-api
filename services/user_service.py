@@ -25,21 +25,38 @@ class UserService:
         self.tour_svc = tour_svc
         self.membership_svc = membership_svc
         self._excluded_fields = ["id", "email"]
-        self._custom_mapping_keys = {"name": "user_name", "status": "user_status", "group": "user_group"}
+        self._custom_mapping_keys = {"name": "user_name", "status": "user_status"}
 
     def get(self, user_id: str, account_id: str) -> dict[str, Any] | None:
         item = self.repo.get(user_id, account_id)
         if item:
             cog_user = self.cog_wrapper.get_user(item["email"])
             item["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
-            return self._map_user(item)
+            
+            # Get workspace from membership
+            workspace_id = self.membership_svc.get_user_workspace(user_id, account_id)
+            user = self._map_user(item)
+            user["group"] = workspace_id
+            return user
         return None
 
     def list_users(self, account_id: str, *, group: str | None = None, include_disabled: bool = False) -> list[dict[str, Any]]:
+        # Get all memberships for the account
+        memberships = self.membership_svc.list_account_memberships(account_id)
+        
+        # Filter by workspace (group) if requested
         if group:
-            items = self.repo.list_by_group(group, account_id)
-        else:
-            items = self.repo.list_all(account_id)
+            memberships = [m for m in memberships if m.get("workspace_id") == group]
+            
+        # Get users
+        items = []
+        for m in memberships:
+            user = self.repo.get(m["user_id"], account_id)
+            if user:
+                # Attach workspace info
+                user["user_group"] = m.get("workspace_id") # Temporary for mapping
+                items.append(user)
+                
         if not include_disabled:
             items = [item for item in items if item.get("user_status") == UserStatus.ACTIVE]
 
@@ -264,8 +281,6 @@ class UserService:
             "email": item.email,
             "user_status": UserStatus.ACTIVE,
             "created_time": created_time,
-            #TODO Resolve user group
-            "user_group": "male",
             "user_metrics": {
                 "asistencia_entrenos": 0,
                 "asistencia_partidos": 0,
@@ -297,7 +312,9 @@ class UserService:
         if get_presigned_url and item.get("avatarUrl", None):
             item["avatarUrl"] = self.s3.presign_get_from_explicit_key(key=item["avatarUrl"])
         item["status"] = item.pop("user_status", None)
-        item["group"] = item.pop("user_group", None)
+        # item["group"] is now handled by caller or passed via user_group temporary field
+        if "user_group" in item:
+            item["group"] = item.pop("user_group")
         item["confirmationStatus"] = item.pop("confirmation_status", None)
         item["identityCardNumber"] = item.pop("identity_card_number", None)
         item["emergencyContactName"] = item.pop("emergency_contact_name", None)

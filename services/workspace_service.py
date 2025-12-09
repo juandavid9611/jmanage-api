@@ -1,4 +1,5 @@
 import re
+from uuid import uuid4
 from services.user_service import UserService
 from api.schemas.workspaces import PutWorkspace
 from typing import Any
@@ -9,10 +10,7 @@ class WorkspaceService:
     def __init__(self, repo: WorkspaceRepo, user_svc: UserService):
         self.repo = repo
         self.user_svc = user_svc
-        self._excluded_fields = ["id"]
-        self._custom_mapping_keys = {"name": "tour_name", "location": "event_location"}
-        self._booker_bool_fields = {"approved", "late", "yellowCard", "redCard", "mvp"}
-        self._booker_int_fields = {"goals", "assists"}
+        self._excluded_fields = ["id"]  # Prevent id from being updated
 
     def get(self, workspace_id: str, account_id: str) -> dict[str, Any] | None:
         item = self.repo.get(workspace_id, account_id)
@@ -59,9 +57,9 @@ class WorkspaceService:
     def delete(self, tour_id: str, account_id: str) -> None:
         self.repo.delete(tour_id, account_id)
 
-    def _get_new_workspace(self, item: PutWorkspace, account_id: str) -> dict[str, Any]:
+    def _get_new_workspace(self, item, account_id: str) -> dict[str, Any]:
         return {
-            "id": item.id,
+            "id": f"{uuid4().hex}",  # Auto-generate workspace ID
             "account_id": account_id,
             "name": item.name,
             "logo": item.logo,
@@ -78,6 +76,5 @@ class WorkspaceService:
         return updates
 
     def _map_attribute_key(self, key: str) -> str:
-        if key in self._custom_mapping_keys:
-            return self._custom_mapping_keys[key]
+        """Convert camelCase to snake_case"""
         return re.sub(r'(?<!^)(?=[A-Z])', '_', key).lower()

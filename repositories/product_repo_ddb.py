@@ -1,7 +1,8 @@
+import os
+import uuid
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 from boto3.dynamodb.conditions import Key, Attr
-import uuid
 from datetime import datetime, timezone
 
 from repositories.ddb_session import product_table

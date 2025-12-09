@@ -49,16 +49,21 @@ async def get_user_accounts(
     if not user_id:
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="No user ID in token")
     
-    membership_data = membership_service.get_user_memberships(user_id)
+    memberships = membership_service.get_user_memberships(user_id)
     
-    if not membership_data['account_ids']:
+    if not memberships:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN, 
             detail="No account memberships found"
         )
     
+    # Transform list of memberships to expected format
+    account_ids = [m["account_id"] for m in memberships]
+    accounts_roles = {m["account_id"]: m["role"] for m in memberships}
+    
     return {
-        **membership_data,
+        'account_ids': account_ids,
+        'accounts_roles': accounts_roles,
         'user_id': user_id
     }
 

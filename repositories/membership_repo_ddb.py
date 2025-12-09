@@ -16,16 +16,45 @@ class MembershipRepo:
         # SK is "ACCOUNT#{id}"
         return sk.split("#", 1)[1] if "#" in sk else sk
 
-    def get_active_memberships(self, user_id: str) -> Dict[str, Any]:
+    def list_by_account(self, account_id: str) -> List[Dict[str, Any]]:
+        """List all memberships for an account using GSI"""
+        try:
+            resp = self._table.query(
+                IndexName="byAccount",
+                KeyConditionExpression=Key("ACCOUNT_ID").eq(account_id)
+            )
+            items = resp.get("Items", [])
+            
+            while "LastEvaluatedKey" in resp:
+                resp = self._table.query(
+                    IndexName="byAccount",
+                    KeyConditionExpression=Key("ACCOUNT_ID").eq(account_id),
+                    ExclusiveStartKey=resp["LastEvaluatedKey"]
+                )
+                items.extend(resp.get("Items", []))
+            
+            memberships = []
+            for it in items:
+                memberships.append({
+                    "user_id": it.get("USER_ID"),
+                    "account_id": it.get("ACCOUNT_ID"),
+                    "role": it.get("role", "user"),
+                    "status": it.get("status", "active"),
+                    "workspace_id": it.get("workspace_id")
+                })
+            return memberships
+        except Exception as e:
+            print(f"Error listing account memberships: {e}")
+            raise e
+
+
+    def get_active_memberships(self, user_id: str) -> List[Dict[str, Any]]:
         """Query DynamoDB for active user memberships
         
         Returns:
-            dict with keys:
-                - account_ids: list of account IDs
-                - accounts_roles: dict mapping account_id to role
+            list of membership dicts with account_id, role, status, workspace_id
         """
-        accounts = []
-        roles = {}
+        memberships = []
 
         try:
             resp = self._table.query(KeyConditionExpression=Key("PK").eq(self._user_pk(user_id)))
@@ -46,22 +75,19 @@ class MembershipRepo:
                 if not acc_id:
                     continue
                 
-                role = it.get("role", "user")
-                accounts.append(acc_id)
-                roles[acc_id] = role
-                
-            # de-dupe
-            accounts = list(dict.fromkeys(accounts))
+                memberships.append({
+                    "account_id": acc_id,
+                    "role": it.get("role", "user"),
+                    "status": it.get("status", "active"),
+                    "workspace_id": it.get("workspace_id")
+                })
             
-            return {
-                'account_ids': accounts,
-                'accounts_roles': roles
-            }
+            return memberships
         except Exception as e:
             print(f"Error querying memberships: {e}")
             raise e
     
-    def create(self, user_id: str, account_id: str, role: str = "user", status: str = "active") -> None:
+    def create(self, user_id: str, account_id: str, role: str = "user", status: str = "active", workspace_id: str | None = None) -> None:
         """Create a membership record"""
         item = {
             "PK": self._user_pk(user_id),
@@ -71,6 +97,9 @@ class MembershipRepo:
             "role": role,
             "status": status
         }
+        
+        if workspace_id:
+            item["workspace_id"] = workspace_id
         
         try:
             self._table.put_item(Item=item)
@@ -105,6 +134,31 @@ class MembershipRepo:
             )
         except Exception as e:
             print(f"Error updating membership status: {e}")
+            raise e
+    
+    def update_workspace(self, user_id: str, account_id: str, workspace_id: str | None) -> None:
+        """Update workspace assignment for a membership"""
+        try:
+            if workspace_id:
+                self._table.update_item(
+                    Key={
+                        "PK": self._user_pk(user_id),
+                        "SK": self._account_sk(account_id)
+                    },
+                    UpdateExpression="SET workspace_id = :wid",
+                    ExpressionAttributeValues={":wid": workspace_id}
+                )
+            else:
+                # Remove workspace_id if None
+                self._table.update_item(
+                    Key={
+                        "PK": self._user_pk(user_id),
+                        "SK": self._account_sk(account_id)
+                    },
+                    UpdateExpression="REMOVE workspace_id"
+                )
+        except Exception as e:
+            print(f"Error updating workspace: {e}")
             raise e
     
     def delete_all_for_user(self, user_id: str) -> None:
