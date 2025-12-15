@@ -251,7 +251,7 @@ class UserService:
         ]
         return response
 
-    def get_top_goals_and_assists(self, workspace_id: str, account_id: str) -> list[dict[str, Any]]:
+    def get_top_goals_and_assists(self, account_id: str, workspace_id: str) -> list[dict[str, Any]]:
         items = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type=None)
         top_goals_and_assists = {}
         for item in items:
