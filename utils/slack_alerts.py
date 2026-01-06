@@ -132,7 +132,11 @@ def alert_with_stack(title: str, detail_fields: dict[str, str | None], stack: st
     lines = []
     for k, v in detail_fields.items():
         if v is not None and v != "":
-            lines.append(f"*{k}:* `{v}`")
+            # If value contains newlines, format as code block for readability
+            if "\n" in str(v):
+                lines.append(f"*{k}:*\n```\n{_truncate(str(v), 1500)}\n```")
+            else:
+                lines.append(f"*{k}:* `{v}`")
     detail_md = "\n".join(lines)
 
     d = _digest(title, detail_md, stack or "")

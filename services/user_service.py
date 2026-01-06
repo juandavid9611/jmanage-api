@@ -251,6 +251,77 @@ class UserService:
         ]
         return response
 
+    def get_workspace_assists_stats(self, account_id: str, workspace_id: str) -> list[dict[str, Any]]:
+        """Get assist stats for all users in a workspace"""
+        # 1. Get all users in the workspace
+        users = self.list_users(account_id, group=workspace_id, include_disabled=False)
+        
+        # 2. Get all tours for the workspace
+        tours = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type=None)
+        
+        # 3. Calculate global totals (total matches, total trainings)
+        total_matches = 0
+        total_trainings = 0
+        
+        for tour in tours:
+            event_type = tour.get("eventType")
+            if event_type == "match":
+                total_matches += 1
+            elif event_type == "training":
+                total_trainings += 1
+                
+        # 4. Calculate stats per user
+        results = []
+        for user in users:
+            user_id = user["id"]
+            stats = {
+                "match_assists": 0,
+                "match_late_arrives": 0,
+                "training_assists": 0,
+                "training_late_arrives": 0,
+            }
+            
+            for tour in tours:
+                bookers = tour.get("bookers", {})
+                if user_id in bookers and bookers[user_id].get("approved", False):
+                    is_late = bookers[user_id].get("late", False)
+                    event_type = tour.get("eventType")
+                    
+                    if event_type == "match":
+                        stats["match_assists"] += 1
+                        if is_late:
+                            stats["match_late_arrives"] += 1
+                    elif event_type == "training":
+                        stats["training_assists"] += 1
+                        if is_late:
+                            stats["training_late_arrives"] += 1
+                            
+            results.append({
+                "user": {
+                    "id": user["id"],
+                    "name": user["name"],
+                    "avatarUrl": user.get("avatarUrl")
+                },
+                "stats": [
+                    {
+                        'id': 'Partidos',
+                        'title': 'Partidos', 
+                        'current': stats["match_assists"],
+                        'total': total_matches, 
+                        'late_arrives': stats["match_late_arrives"]
+                    },
+                    {
+                        'id': 'Entrenamientos', 
+                        'title': 'Entrenamientos', 
+                        'current': stats["training_assists"],
+                        'total': total_trainings, 
+                        'late_arrives': stats["training_late_arrives"]
+                    }
+                ]
+            })
+            
+        return results
+
     def get_top_goals_and_assists(self, account_id: str, workspace_id: str) -> list[dict[str, Any]]:
         items = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type=None)
         top_goals_and_assists = {}
@@ -271,6 +342,45 @@ class UserService:
                     top_goals_and_assists[booker_id]["assists"] += booker["assists"]
         sorted_top = sorted(top_goals_and_assists.values(), key=lambda x: (x["goals"], x["assists"]), reverse=True)
         return sorted_top
+
+    def get_wins_draws_loses(self, account_id: str, workspace_id: str) -> list[dict[str, Any]]:
+        items = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type="match")
+        wins_draws_loses = {
+            "wins": 0,
+            "draws": 0,
+            "loses": 0,
+            "wins_list": [],
+            "draws_list": [],
+            "loses_list": [],
+        }
+        for item in items:
+            if item.get("eventType") == "match":
+                scores = item.get("scores", {})
+                if scores.get("home") > scores.get("away"):
+                    wins_draws_loses["wins"] += 1
+                    wins_draws_loses["wins_list"].append(
+                        {
+                            "name": item.get("name"),
+                            "scores": scores
+                        }
+                    )
+                elif scores.get("home") == scores.get("away"):
+                    wins_draws_loses["draws"] += 1
+                    wins_draws_loses["draws_list"].append(
+                        {
+                            "name": item.get("name"),
+                            "scores": scores
+                        }
+                    )
+                else:
+                    wins_draws_loses["loses"] += 1
+                    wins_draws_loses["loses_list"].append(
+                        {
+                            "name": item.get("name"),
+                            "scores": scores
+                        }
+                    )
+        return wins_draws_loses
 
     def _get_new_user(self, item: CreateUser) -> dict[str, Any]:
         created_time = int(time())

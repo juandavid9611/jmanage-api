@@ -32,8 +32,9 @@ class S3Adapter:
     def _presign_get(self, *, key: str, expires_in: int = 3600) -> str:
             return self._s3.generate_presigned_url(
                 ClientMethod="get_object",
-                Params={"Bucket": _bucket_name(), "Key": key},
+                Params={"Bucket": _bucket_name(), "Key": key, 'ResponseContentType': 'image/png'},
                 ExpiresIn=expires_in,
+
             )
     
     def get_s3_public_url(self, key: str) -> str :

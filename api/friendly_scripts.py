@@ -42,6 +42,23 @@ async def get_top_goals_and_assists(
 ):
     return svc.get_top_goals_and_assists(account_id, workspace_id)
 
+@router.get("/workspace_assists_stats", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+async def get_workspace_assists_stats(
+    workspace_id: str,
+    account_id: str = Depends(get_account_id),
+    svc: UserService = Depends(get_user_service)
+):
+    return svc.get_workspace_assists_stats(account_id, workspace_id)
+
 @router.get("/raise_error", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def raise_error():
     raise HTTPException(status_code=500, detail="This is a test error for monitoring purposes.")
+
+
+@router.get("/wins_draws_loses", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+async def get_wins_draws_loses(
+    account_id: str = Depends(get_account_id),
+    workspace_id: str = Query(None), 
+    svc: UserService = Depends(get_user_service)
+):
+    return svc.get_wins_draws_loses(account_id, workspace_id)
