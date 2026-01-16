@@ -1,6 +1,6 @@
 from api.schemas.workspaces import PutWorkspace, CreateWorkspace
 from di import get_workspace_service
-from auth import PermissionChecker, get_current_user, get_account_id
+from auth import PermissionChecker, get_current_user, get_account_id, get_account_role
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from services.workspace_service import WorkspaceService
@@ -12,9 +12,10 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 async def list_workspaces(
     user: dict = Depends(get_current_user),
     account_id: str = Depends(get_account_id),
+    account_role: str = Depends(get_account_role),
     svc: WorkspaceService = Depends(get_workspace_service)
     ):
-    return svc.get_related(user, account_id)
+    return svc.get_related(user, account_id, account_role)
 
 @router.post("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_workspace(

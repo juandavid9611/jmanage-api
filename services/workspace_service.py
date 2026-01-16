@@ -18,9 +18,9 @@ class WorkspaceService:
             return item
         return None
 
-    def get_related(self, user, account_id: str) -> list[dict[str, Any]]:
+    def get_related(self, user, account_id: str, account_role: str) -> list[dict[str, Any]]:
         items = self.repo.list_all(account_id)
-        if user["custom:role"] == "admin":
+        if account_role == "admin":
             return [item for item in items]
         user_db = self.user_svc.get(user["sub"], account_id)
         if not user_db:

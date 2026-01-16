@@ -105,9 +105,23 @@ def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: st
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": detail_md}})
 
     if stack:
+        # Smart truncation: keep beginning and end of stack trace
+        # Slack has a ~3000 char limit per block, use 2800 to be safe
+        max_stack_len = 2800
+        if len(stack) > max_stack_len:
+            # Keep first 1400 and last 1400 characters with separator
+            keep_chars = (max_stack_len - 50) // 2  # 50 chars for separator
+            truncated_stack = (
+                stack[:keep_chars] + 
+                "\n\n... [middle truncated] ...\n\n" + 
+                stack[-keep_chars:]
+            )
+        else:
+            truncated_stack = stack
+            
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"```{_truncate(stack)}```"}
+            "text": {"type": "mrkdwn", "text": f"```{truncated_stack}```"}
         })
 
     payload = {"text": f"{APP_NAME} {ENV} {title}", "blocks": blocks}
@@ -121,6 +135,11 @@ def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: st
         )
         with request.urlopen(req, timeout=5) as resp:
             _ = resp.read()
+    except error.HTTPError as e:
+        # Slack API returned an error
+        error_body = e.read().decode('utf-8') if e.fp else 'No error body'
+        print(f"[slack_alerts] Slack API error {e.code}: {error_body}")
+        print(f"[slack_alerts] Payload size: {len(json.dumps(payload))} bytes")
     except error.URLError as e:
         print("[slack_alerts] Failed sending to Slack:", e)
 
@@ -134,7 +153,7 @@ def alert_with_stack(title: str, detail_fields: dict[str, str | None], stack: st
         if v is not None and v != "":
             # If value contains newlines, format as code block for readability
             if "\n" in str(v):
-                lines.append(f"*{k}:*\n```\n{_truncate(str(v), 1500)}\n```")
+                lines.append(f"*{k}:*\n```\n{str(v)}\n```")
             else:
                 lines.append(f"*{k}:* `{v}`")
     detail_md = "\n".join(lines)

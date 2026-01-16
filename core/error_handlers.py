@@ -12,10 +12,15 @@ def install_error_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         request_id = getattr(request.state, "request_id", None)
+        user_id = getattr(request.state, "user_id", None)
+        account_id = getattr(request.state, "account_id", None)
+        
         logger.warning(
             "http.exception",
             extra={
                 "request_id": request_id,
+                "user_id": user_id,
+                "account_id": account_id,
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": exc.status_code,
@@ -28,6 +33,8 @@ def install_error_handlers(app: FastAPI):
                 title=f"HTTPException {exc.status_code}",
                 detail_fields={
                     "request_id": request_id,
+                    "user_id": user_id,
+                    "account_id": account_id,
                     "method": request.method,
                     "path": request.url.path,
                 },
@@ -47,6 +54,8 @@ def install_error_handlers(app: FastAPI):
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         request_id = getattr(request.state, "request_id", None)
+        user_id = getattr(request.state, "user_id", None)
+        account_id = getattr(request.state, "account_id", None)
         
         # Capture request body for debugging
         request_body = None
@@ -81,6 +90,8 @@ def install_error_handlers(app: FastAPI):
             "validation.exception",
             extra={
                 "request_id": request_id,
+                "user_id": user_id,
+                "account_id": account_id,
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": 422,
@@ -92,16 +103,15 @@ def install_error_handlers(app: FastAPI):
         # Build detailed alert with request data and validation errors
         detail_fields = {
             "request_id": request_id,
+            "user_id": user_id,
+            "account_id": account_id,
             "method": request.method,
             "path": request.url.path,
             "validation_errors": errors_text,
         }
         
         if request_body:
-            # Truncate body if too long
-            max_body_len = 1000
-            if len(request_body) > max_body_len:
-                request_body = request_body[:max_body_len] + "\n... [truncated]"
+            # Include full request body for debugging (no truncation)
             detail_fields["request_body"] = request_body
         
         alert_with_stack(
@@ -124,11 +134,16 @@ def install_error_handlers(app: FastAPI):
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         request_id = getattr(request.state, "request_id", None)
+        user_id = getattr(request.state, "user_id", None)
+        account_id = getattr(request.state, "account_id", None)
+        
         stack = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         logger.error(
             "unhandled.exception",
             extra={
                 "request_id": request_id,
+                "user_id": user_id,
+                "account_id": account_id,
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": 500,
@@ -140,6 +155,8 @@ def install_error_handlers(app: FastAPI):
             title=f"Unhandled {type(exc).__name__}",
             detail_fields={
                 "request_id": request_id,
+                "user_id": user_id,
+                "account_id": account_id,
                 "method": request.method,
                 "path": request.url.path,
             },

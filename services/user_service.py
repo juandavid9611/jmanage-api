@@ -73,7 +73,8 @@ class UserService:
             user_id=item.id,
             account_id=item.accountId,
             role="user",
-            status="active"
+            status="active",
+            workspace_id='male'
         )
         
         self.notifier.send_user_welcome(email=item.email, name=item.name)
