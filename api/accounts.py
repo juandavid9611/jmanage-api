@@ -35,10 +35,12 @@ async def update_current_account(
 @router.post("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_account(
     create_account: CreateAccount,
+    user: dict = Depends(get_current_user),
     svc: AccountService = Depends(get_account_service)
 ):
     """Create new account (admin only)"""
-    account = svc.create(create_account)
+    user_id = user["sub"]
+    account = svc.create(create_account, owner_user_id=user_id)
     return account
 
 

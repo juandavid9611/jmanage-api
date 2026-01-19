@@ -14,9 +14,12 @@ class AccountService:
         """Get account by ID"""
         return self.repo.get(account_id)
     
-    def create(self, item: CreateAccount) -> dict[str, Any]:
+    def create(self, item: CreateAccount, owner_user_id: str | None = None) -> dict[str, Any]:
         """Create new account"""
         now = datetime.now().isoformat()
+        
+        # Generate unique default workspace ID
+        default_workspace_id = f"ws_{uuid4().hex[:12]}"
         
         new_account = {
             "id": item.id,
@@ -24,7 +27,7 @@ class AccountService:
             "created_at": now,
             "updated_at": now,
             "settings": item.settings.dict() if item.settings else {
-                "default_workspace": "main",
+                "default_workspace": default_workspace_id,
                 "timezone": "America/Bogota",
                 "language": "es",
                 "currency": "COP"
@@ -37,7 +40,22 @@ class AccountService:
             "branding": item.branding.dict() if item.branding else {}
         }
         
+        # Ensure default_workspace is set if settings were provided
+        if "default_workspace" not in new_account["settings"]:
+            new_account["settings"]["default_workspace"] = default_workspace_id
+        
         self.repo.put(new_account)
+        
+        # Create admin membership for account creator
+        if owner_user_id:
+            self.membership_svc.create_membership(
+                user_id=owner_user_id,
+                account_id=item.id,
+                role="admin",
+                status="active",
+                workspace_id=new_account["settings"]["default_workspace"]
+            )
+        
         return new_account
     
     def update(self, account_id: str, item: UpdateAccount) -> dict[str, Any] | None:

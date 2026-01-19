@@ -58,7 +58,16 @@ def get_user_service() -> UserService:
     cog_wrapper = get_cognito_wrapper()
     tour_svc = get_tour_service()
     membership_svc = get_membership_service()
-    return UserService(repo, s3, get_notification_orchestator(), cog_wrapper, tour_svc=tour_svc, membership_svc=membership_svc)
+    # Pass getter function to avoid circular dependency for account_service
+    return UserService(
+        repo, 
+        s3, 
+        get_notification_orchestator(), 
+        cog_wrapper, 
+        tour_svc=tour_svc, 
+        membership_svc=membership_svc, 
+        get_account_svc=get_account_service
+    )
 
 def get_workspace_service() -> WorkspaceService:
     repo = WorkspaceRepo()

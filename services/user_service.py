@@ -16,7 +16,7 @@ class UserService:
     def __init__(
             self, repo: UserRepo, s3: S3Adapter, notifier: Notifications,
             cog_wrapper: CognitoIdentityProviderWrapper, tour_svc: TourService, 
-            membership_svc: MembershipService
+            membership_svc: MembershipService, get_account_svc
             ):
         self.repo = repo
         self.notifier = notifier
@@ -24,6 +24,7 @@ class UserService:
         self.cog_wrapper = cog_wrapper
         self.tour_svc = tour_svc
         self.membership_svc = membership_svc
+        self._get_account_svc = get_account_svc  # Lazy getter to avoid circular dependency
         self._excluded_fields = ["id", "email"]
         self._custom_mapping_keys = {"name": "user_name", "status": "user_status"}
 
@@ -68,13 +69,18 @@ class UserService:
         new_user = self._get_new_user(item)
         self.repo.put(new_user)
         
+        # Get account's default workspace from service (lazy loaded)
+        account_svc = self._get_account_svc()
+        account = account_svc.get(item.accountId)
+        default_workspace = account["settings"].get("default_workspace") if account else None
+        
         # Create membership for the new user
         self.membership_svc.create_membership(
             user_id=item.id,
             account_id=item.accountId,
-            role="user",
+            role="user",  # New users get 'user' role
             status="active",
-            workspace_id='male'
+            workspace_id=default_workspace
         )
         
         self.notifier.send_user_welcome(email=item.email, name=item.name)
