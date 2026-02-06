@@ -20,7 +20,7 @@ async def get_calendar(
 
 @router.post(
     "",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def create_calendar_event(
     put_calendar_event: PutCalendarEvent,
@@ -43,7 +43,7 @@ async def create_calendar_event(
 
 @router.put(
     "",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def update_calendar_event(
     put_calendar_event: PutCalendarEvent,
@@ -69,7 +69,7 @@ async def update_calendar_event(
 
 @router.delete(
     "/{calendar_event_id}",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def delete_calendar_event(
     calendar_event_id: str,
@@ -95,7 +95,7 @@ async def delete_calendar_event(
 
 @router.post(
     "/{calendar_event_id}/participate",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin', 'coach']))]
 )
 async def participate_calendar_event(
     calendar_event_id: str,
