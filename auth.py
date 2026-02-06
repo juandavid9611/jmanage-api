@@ -117,6 +117,56 @@ def get_account_role(
     """
     return user_accounts['accounts_roles'].get(account_id, 'user')
 
+async def get_workspace_id(
+    workspace_id: Optional[str] = Query(None)
+) -> Optional[str]:
+    """Extract workspace_id from query parameter
+    
+    Args:
+        workspace_id: Workspace ID from query parameter
+        
+    Returns:
+        Workspace ID if provided, None otherwise
+    """
+    return workspace_id
+
+async def get_workspace_role(
+    workspace_id: Optional[str] = Depends(get_workspace_id),
+    user: dict = Depends(get_current_user),
+    account_id: str = Depends(get_account_id),
+    membership_service: MembershipService = Depends(get_membership_service)
+) -> Optional[str]:
+    """Get user's role in the specified workspace
+    
+    Args:
+        workspace_id: Workspace ID from query parameter
+        user: Current authenticated user
+        account_id: Current account ID
+        membership_service: Membership service for role lookup
+        
+    Returns:
+        User's role in the workspace, or None if workspace_id not provided
+        
+    Raises:
+        HTTPException: If workspace_id provided but user has no access
+    """
+    if not workspace_id:
+        return None
+    
+    role = membership_service.get_user_role_in_workspace(
+        user["sub"], 
+        account_id, 
+        workspace_id
+    )
+    
+    if not role:
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail=f"User does not have access to workspace {workspace_id}"
+        )
+    
+    return role
+
 class PermissionChecker:
     """Check if user has required permissions for the current account"""
     
@@ -143,4 +193,55 @@ class PermissionChecker:
                 status_code=HTTP_401_UNAUTHORIZED,
                 detail='User does not have the required permissions for this account.'
             )
+        return True
+
+class WorkspacePermissionChecker:
+    """Check if user has required permissions for a specific workspace"""
+    
+    def __init__(self, required_permissions: list[str]) -> None:
+        """
+        Initialize workspace permission checker
+        
+        Args:
+            required_permissions: List of roles allowed (e.g., ['admin'] or ['admin', 'user'])
+        """
+        self.required_permissions = required_permissions
+
+    def __call__(
+        self,
+        workspace_role: Optional[str] = Depends(get_workspace_role),
+        account_role: str = Depends(get_account_role)
+    ) -> bool:
+        """Validate user has required role for the workspace
+        
+        Account admins automatically bypass workspace-level checks.
+        
+        Args:
+            workspace_role: User's role in the workspace (None if no workspace_id provided)
+            account_role: User's role for the account
+            
+        Returns:
+            True if user has required permissions
+            
+        Raises:
+            HTTPException: If user doesn't have required permissions
+        """
+        # Account admins bypass workspace checks
+        # if account_role == 'admin':
+        #     return True
+        
+        # If no workspace_role, user doesn't have access
+        if not workspace_role:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail='User does not have access to this workspace.'
+            )
+        
+        # Check workspace role
+        if workspace_role not in self.required_permissions:
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail=f'Workspace {self.required_permissions[0]} permission required.'
+            )
+        
         return True

@@ -50,24 +50,19 @@ class PaymentRequestsRepo:
                 FilterExpression=Attr("account_id").eq(account_id)
             )
 
-    def list_by_user(self, user_id: str, account_id: str) -> Iterable[dict[str, Any]]:
-        """List payment requests by user within the specified account"""
-        try:
-            resp = self._table.query(
-                IndexName=self._user_gsi,
-                KeyConditionExpression=Key("user_id").eq(user_id),
-                FilterExpression=Attr("account_id").eq(account_id)
-            )
-            return resp.get("Items", [])
-        except Exception:
-            return [i for i in self.list_all(account_id) if i.get("user_id") == user_id]
-
-    def list_by_group(self, group: str, account_id: str) -> Iterable[dict[str, Any]]:
-        """List payment requests by group within the specified account"""
+    def list_filtered(self, account_id: str, user_id: str | None = None, group: str | None = None) -> Iterable[dict[str, Any]]:
+        """List payment requests with optional filters within the specified account"""
+        filter_expr = Attr("account_id").eq(account_id)
+        if user_id:
+            filter_expr = filter_expr & Attr("user_id").eq(user_id)
+        if group:
+            filter_expr = filter_expr & Attr("user_group").eq(group)
+        
         return _scan_all(
             self._table,
-            FilterExpression=Attr("user_group").eq(group) & Attr("account_id").eq(account_id)
+            FilterExpression=filter_expr
         )
+
     
     def list_by_status(self, status: str, account_id: str) -> Iterable[dict[str, Any]]:
         """List payment requests by status within the specified account"""

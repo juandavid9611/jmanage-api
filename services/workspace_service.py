@@ -1,15 +1,15 @@
 import re
 from uuid import uuid4
-from services.user_service import UserService
+from services.membership_service import MembershipService
 from api.schemas.workspaces import PutWorkspace
 from typing import Any
 from repositories.workspace_repo_ddb import WorkspaceRepo
 
 
 class WorkspaceService:
-    def __init__(self, repo: WorkspaceRepo, user_svc: UserService):
+    def __init__(self, repo: WorkspaceRepo, membership_svc: MembershipService):
         self.repo = repo
-        self.user_svc = user_svc
+        self.membership_svc = membership_svc
         self._excluded_fields = ["id"]  # Prevent id from being updated
 
     def get(self, workspace_id: str, account_id: str) -> dict[str, Any] | None:
@@ -18,20 +18,27 @@ class WorkspaceService:
             return item
         return None
 
-    def get_related(self, user, account_id: str, account_role: str) -> list[dict[str, Any]]:
-        items = self.repo.list_all(account_id)
-        if account_role == "admin":
-            return [item for item in items]
-        user_db = self.user_svc.get(user["sub"], account_id)
-        if not user_db:
-            raise ValueError(f"User {user['sub']} not found")
-        related_items = []
-        for item in items:
-            if user_db.get("group") is None:
-                raise ValueError(f"User {user['sub']} has no group assigned") 
-            if item["id"] == user_db["group"]:
-                related_items.append(item)
-        return related_items
+    def get_related(self, user, account_id: str) -> list[dict[str, Any]]:
+        """Get all workspaces user has access to via memberships"""
+        user_id = user["sub"]
+        memberships = self.membership_svc.get_user_account_memberships(user_id, account_id)
+        
+        if not memberships:
+            return []
+        
+        # Create a mapping of workspace_id to role
+        workspace_roles = {m["workspace_id"]: m.get("role", "user") for m in memberships if m.get("workspace_id")}
+        
+        all_workspaces = self.repo.list_all(account_id)
+        
+        # Add role to each workspace
+        related_workspaces = []
+        for ws in all_workspaces:
+            if ws["id"] in workspace_roles:
+                workspace_with_role = {**ws, "role": workspace_roles[ws["id"]]}
+                related_workspaces.append(workspace_with_role)
+        
+        return related_workspaces
 
     def list_workspaces(self, account_id: str) -> list[dict[str, Any]]:
         return [item for item in self.repo.list_all(account_id)]

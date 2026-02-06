@@ -71,8 +71,8 @@ def get_user_service() -> UserService:
 
 def get_workspace_service() -> WorkspaceService:
     repo = WorkspaceRepo()
-    user_svc = get_user_service()
-    return WorkspaceService(repo, user_svc=user_svc)
+    membership_svc = get_membership_service()
+    return WorkspaceService(repo, membership_svc=membership_svc)
 
 
 def get_product_service() -> ProductService:

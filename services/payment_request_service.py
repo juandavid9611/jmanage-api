@@ -32,10 +32,9 @@ class PaymentRequestService:
         return None
 
     def list_payment_requests(self, account_id: str, *, user_id: str | None = None, group: str | None = None) -> list[dict[str, Any]]:
-        if user_id:
-            items = self.repo.list_by_user(user_id, account_id)
-        elif group:
-            items = self.repo.list_by_group(group, account_id)
+        """List payment requests with optional filtering by user_id and/or group (workspace_id)"""
+        if user_id or group:
+            items = self.repo.list_filtered(account_id, user_id=user_id, group=group)
         else:
             items = self.repo.list_all(account_id)
         return [self._map_payment_request(i, get_presigned_url=False) for i in items]

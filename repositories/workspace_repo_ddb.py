@@ -1,6 +1,6 @@
 import os
 from .ddb_session import workspace_table
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from typing import Iterable, Any
 
 def _scan_all(table, **kwargs) -> list[dict[str, Any]]:
@@ -37,7 +37,6 @@ class WorkspaceRepo:
     def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
         """List all workspaces for the specified account"""
         try:
-            from boto3.dynamodb.conditions import Key
             resp = self._table.query(
                 IndexName=self._account_gsi,
                 KeyConditionExpression=Key("account_id").eq(account_id)

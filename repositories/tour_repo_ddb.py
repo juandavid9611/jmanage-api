@@ -50,18 +50,18 @@ class TourRepo:
                 FilterExpression=Attr("account_id").eq(account_id)
             )
 
-    def list_by_group(self, group: str, account_id: str) -> Iterable[dict[str, Any]]:
-        """List tours by group within the specified account"""
-        return _scan_all(
-            self._table,
-            FilterExpression=Attr("user_group").eq(group) & Attr("account_id").eq(account_id)
-        )
+    def list_filtered(self, account_id: str, group: str | None = None, tour_type: str | None = None) -> Iterable[dict[str, Any]]:
+        """List tours with optional filters within the specified account"""
+        filter_expr = Attr("account_id").eq(account_id)
+        if group:
+            filter_expr = filter_expr & Attr("user_group").eq(group)
+        if tour_type:
+            # Attribute in DB is 'event_type', not 'tour_type'
+            filter_expr = filter_expr & Attr("event_type").eq(tour_type)
 
-    def list_by_type(self, tour_type: str, account_id: str) -> Iterable[dict[str, Any]]:
-        """List tours by type within the specified account"""
         return _scan_all(
             self._table,
-            FilterExpression=Attr("tour_type").eq(tour_type) & Attr("account_id").eq(account_id)
+            FilterExpression=filter_expr
         )
 
     def put(self, item: dict[str, Any]) -> None:

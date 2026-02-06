@@ -12,10 +12,9 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 async def list_workspaces(
     user: dict = Depends(get_current_user),
     account_id: str = Depends(get_account_id),
-    account_role: str = Depends(get_account_role),
     svc: WorkspaceService = Depends(get_workspace_service)
     ):
-    return svc.get_related(user, account_id, account_role)
+    return svc.get_related(user, account_id)
 
 @router.post("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_workspace(

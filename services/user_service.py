@@ -35,9 +35,9 @@ class UserService:
             item["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
             
             # Get workspace from membership
-            workspace_id = self.membership_svc.get_user_workspace(user_id, account_id)
+            # workspace_id = self.membership_svc.get_user_workspace(user_id, account_id)
             user = self._map_user(item)
-            user["group"] = workspace_id
+            # user["group"] = workspace_id
             return user
         return None
 
@@ -118,8 +118,12 @@ class UserService:
         self.cog_wrapper.enable_user(user["email"])
         self.repo.update(user_id, account_id, {"user_status": UserStatus.ACTIVE})
         
-        # Enable membership for this account
-        self.membership_svc.enable_membership(user_id, account_id)
+        # Enable all memberships for this user in this account
+        memberships = self.membership_svc.get_user_account_memberships(user_id, account_id)
+        for membership in memberships:
+            workspace_id = membership.get("workspace_id")
+            if workspace_id:
+                self.membership_svc.enable_membership(user_id, account_id, workspace_id)
 
     def disable(self, user_id: str, account_id: str) -> None:
         user = self.repo.get(user_id, account_id)
@@ -128,8 +132,12 @@ class UserService:
         self.cog_wrapper.disable_user(user["email"])
         self.repo.update(user_id, account_id, {"user_status": UserStatus.DISABLED})
         
-        # Disable membership for this account
-        self.membership_svc.disable_membership(user_id, account_id)
+        # Disable all memberships for this user in this account
+        memberships = self.membership_svc.get_user_account_memberships(user_id, account_id)
+        for membership in memberships:
+            workspace_id = membership.get("workspace_id")
+            if workspace_id:
+                self.membership_svc.disable_membership(user_id, account_id, workspace_id)
 
     def update_user_avatar_url(self, user_id: str, account_id: str, item: PutUserAvatar) -> dict[str, Any] | None:
         existing = self.repo.get(user_id, account_id)

@@ -28,10 +28,8 @@ class TourService:
         return None
 
     def list_tours(self, account_id: str, *, group: str | None = None, tour_type: str | None = None) -> list[dict[str, Any]]:
-        if group:
-            items = self.repo.list_by_group(group, account_id)
-        elif tour_type:
-            items = self.repo.list_by_type(tour_type, account_id)
+        if group or tour_type:
+            items = self.repo.list_filtered(account_id, group=group, tour_type=tour_type)
         else:
             items = self.repo.list_all(account_id)
         return [self._map_tour(i) for i in items]
