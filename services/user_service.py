@@ -188,7 +188,7 @@ class UserService:
             filename=file_name, 
             content_type=file_content_type
         )
-        presigned_urls['get_presigned_url'] = self.s3.presign_get_from_explicit_key(key=result["key"])
+        presigned_urls['get_presigned_url'] = self.s3.presign_get_from_explicit_key(key=result["key"], content_type='image/png')
         presigned_urls['put_presigned_url'] = result["url"]
         presigned_urls['key'] = result["key"]
         return presigned_urls
@@ -435,7 +435,7 @@ class UserService:
         item["phoneNumber"] = item.pop("phone_number", None)
         item["avatarUrl"] = item.pop("avatar_url", None)
         if get_presigned_url and item.get("avatarUrl", None):
-            item["avatarUrl"] = self.s3.presign_get_from_explicit_key(key=item["avatarUrl"])
+            item["avatarUrl"] = self.s3.presign_get_from_explicit_key(key=item["avatarUrl"], content_type='image/png')
         item["status"] = item.pop("user_status", None)
         # item["group"] is now handled by caller or passed via user_group temporary field
         if "user_group" in item:

@@ -29,13 +29,18 @@ class S3Adapter:
         )
         return {"key": key, "url": url}
 
-    def _presign_get(self, *, key: str, expires_in: int = 3600) -> str:
-            return self._s3.generate_presigned_url(
-                ClientMethod="get_object",
-                Params={"Bucket": _bucket_name(), "Key": key, 'ResponseContentType': 'image/png'},
-                ExpiresIn=expires_in,
-
-            )
+    def _presign_get(self, *, key: str, content_type: str, expires_in: int = 3600) -> str:
+        params = {
+            "Bucket": _bucket_name(), 
+            "Key": key,
+            "ResponseContentType": content_type
+        }
+            
+        return self._s3.generate_presigned_url(
+            ClientMethod="get_object",
+            Params=params,
+            ExpiresIn=expires_in,
+        )
     
     def get_s3_public_url(self, key: str) -> str :
         return f"https://{_bucket_name()}.s3.amazonaws.com/{key}"
@@ -45,9 +50,10 @@ class S3Adapter:
         self,
         *,
         key: str,
+        content_type: str,
         expires_in: int = 3600,
     ) -> str:
-        return self._presign_get(key=key, expires_in=expires_in)
+        return self._presign_get(key=key, content_type=content_type, expires_in=expires_in)
 
     def presign_invoice_put(
         self,
@@ -97,3 +103,19 @@ class S3Adapter:
     ) -> dict[str, str]:
         key = self._kb.product_image(account_id, product_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+    
+    def presign_file_put(
+        self,
+        *,
+        account_id: str,
+        file_id: str,
+        filename: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> dict[str, str]:
+        key = self._kb.file(account_id, file_id, filename)
+        return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+    
+    def delete_file(self, key: str) -> None:
+        """Delete a file from S3"""
+        self._s3.delete_object(Bucket=_bucket_name(), Key=key)

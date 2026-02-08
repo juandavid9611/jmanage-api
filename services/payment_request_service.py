@@ -190,7 +190,7 @@ class PaymentRequestService:
         item["userId"] = item.pop("user_id", None)
         item["createdTime"] = item.pop("created_time", None)
         if get_presigned_url:
-            item["images"] = [self.s3.presign_get_from_explicit_key(key=image) for image in item.get("images", [])]
+            item["images"] = [self.s3.presign_get_from_explicit_key(key=image, content_type='image/png') for image in item.get("images", [])]
         return item
 
     def _get_needed_updates(self, item: BulkPutPaymentRequest) -> dict[str, Any]:

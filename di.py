@@ -23,6 +23,8 @@ from services.membership_service import MembershipService
 from repositories.membership_repo_ddb import MembershipRepo
 from repositories.account_repo_ddb import AccountRepo
 from services.account_service import AccountService
+from services.file_service import FileService
+from repositories.file_repo_ddb import FileRepo
 
 
 def get_notification_orchestator() -> Notifications:
@@ -92,3 +94,8 @@ def get_account_service():
     repo = AccountRepo()
     membership_svc = get_membership_service()
     return AccountService(repo, membership_svc)
+
+def get_file_service() -> FileService:
+    repo = FileRepo()
+    s3 = S3Adapter()
+    return FileService(repo, s3)

@@ -57,4 +57,10 @@ class KeyBuilder:
         {env}/accounts/{account_id}/products/{product_id}/{filename}
         """
         return join(self.account_root(account_id), "products", _clean(product_id), _clean(filename))
-
+    
+    def file(self, account_id: str, file_id: str, filename: str) -> str:
+        """
+        Full object key under the files prefix, including filename.
+        {env}/accounts/{account_id}/files/{file_id}/{filename}
+        """
+        return join(self.account_root(account_id), "files", _clean(file_id), _clean(filename))
