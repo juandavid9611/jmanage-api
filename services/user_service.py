@@ -221,7 +221,7 @@ class UserService:
         for user in users:
             self.notifier.send_christmas_greeting(email=user["email"], name=user["name"])
 
-    def get_assists_stats(self, user_id: str, account_id: str) -> list[dict[str, Any]]:
+    def get_assists_stats(self, user_id: str, account_id: str, workspace_id: str) -> list[dict[str, Any]]:
         user = self.get(user_id, account_id)
         if not user:
             raise ValueError(f"User {user_id} not found.")
@@ -233,7 +233,7 @@ class UserService:
             "total_trainings": 0,
             "training_late_arrives": 0,
         }
-        items = self.tour_svc.list_tours(account_id, group=user["group"], tour_type=None)
+        items = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type=None)
         for item in items:
             if item.get("eventType") == "match":
                 stats["total_matches"] += 1

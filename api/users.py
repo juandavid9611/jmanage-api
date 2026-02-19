@@ -1,3 +1,4 @@
+from auth import get_current_user
 from api.schemas.files import FileSpec
 from di import get_user_service
 from auth import PermissionChecker, get_account_id
@@ -137,3 +138,4 @@ async def get_late_arrives(
 ):
     items = svc.get_late_arrives(user_id, account_id)
     return items
+    

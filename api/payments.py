@@ -115,7 +115,6 @@ async def delete_payment_request(
     svc.delete(payment_request_id, account_id)
     return {"deleted_payment_request_id": payment_request_id}
 
-#TODO MISSING TESTING
 @router.post(
     "/{payment_request_id}/generate-presigned-urls",
     dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin']))]
@@ -147,7 +146,6 @@ async def generate_payment_request_presigned_urls(
 
     return {"urls": result}
 
-#TODO MISSING TESTING
 @router.post(
     "/{payment_request_id}/request_approval",
     dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin']))]

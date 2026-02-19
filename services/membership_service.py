@@ -53,3 +53,47 @@ class MembershipService:
             if m.get("workspace_id") == workspace_id:
                 return m.get("role")
         return None
+
+    def update_user_active_workspace(self, user_id: str, account_id: str, new_workspace_id: str) -> Dict[str, Any] | None:
+        """Switch the user's membership to a different workspace.
+        
+        Finds the user's current active membership, deletes it, and creates
+        a new membership for the target workspace_id, preserving the role.
+        
+        Returns the new membership info, or None if no active membership found.
+        """
+        memberships = self.repo.get_user_account_memberships(user_id, account_id)
+        
+        # Find current active membership
+        current = None
+        for m in memberships:
+            if m.get("status") == "active":
+                current = m
+                break
+        
+        if not current:
+            return None
+        
+        old_workspace_id = current.get("workspace_id")
+        role = current.get("role", "user")
+        
+        # If already on the target workspace, no-op
+        if old_workspace_id == new_workspace_id:
+            return {
+                "user_id": user_id,
+                "account_id": account_id,
+                "workspace_id": new_workspace_id,
+                "role": role
+            }
+        
+        # Delete old membership and create new one with the new workspace
+        self.repo.delete(user_id, account_id, old_workspace_id)
+        self.repo.create(user_id, account_id, new_workspace_id, role, "active")
+        
+        return {
+            "user_id": user_id,
+            "account_id": account_id,
+            "workspace_id": new_workspace_id,
+            "role": role
+        }
+

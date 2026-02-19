@@ -19,20 +19,13 @@ async def health_check():
     return {"status": "healthy"}
 
 @router.get("/assists_stats", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
-async def get_assists_stats_from_token_user(
-    user = Depends(get_current_user), 
-    account_id: str = Depends(get_account_id),
-    svc: UserService = Depends(get_user_service)
-):
-    return svc.get_assists_stats(user["sub"], account_id)
-
-@router.get("/user_assists_stats", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def get_assists_stats(
-    user_id: str, 
+    user = Depends(get_current_user), 
+    workspace_id: str = Query(..., description="Workspace ID for this calendar event"),
     account_id: str = Depends(get_account_id),
     svc: UserService = Depends(get_user_service)
 ):
-    return svc.get_assists_stats(user_id, account_id)
+    return svc.get_assists_stats(user["sub"], account_id, workspace_id)
 
 @router.get("/top_goals_and_assists", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def get_top_goals_and_assists(

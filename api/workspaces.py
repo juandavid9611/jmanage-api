@@ -16,6 +16,14 @@ async def list_workspaces(
     ):
     return svc.get_related(user, account_id)
 
+@router.get("/all", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+async def list_all_workspaces(
+    account_id: str = Depends(get_account_id),
+    svc: WorkspaceService = Depends(get_workspace_service)
+    ):
+    """List ALL workspaces in the account (not filtered by membership)"""
+    return svc.list_workspaces(account_id)
+
 @router.post("", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_workspace(
     create_workspace: CreateWorkspace, 

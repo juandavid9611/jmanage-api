@@ -14,6 +14,26 @@ async def get_my_memberships(
     user_id = user.get("sub")
     return svc.get_user_memberships(user_id)
 
+@router.put("/my-workspace")
+async def update_my_workspace(
+    workspace_id: str = Query(..., description="Workspace ID to set as active"),
+    user: dict = Depends(get_current_user),
+    account_id: str = Depends(get_account_id),
+    svc: MembershipService = Depends(get_membership_service)
+):
+    """Update the current user's active workspace selection.
+    
+    Validates the user has an active membership for the target workspace.
+    """
+    user_id = user.get("sub")
+    result = svc.update_user_active_workspace(user_id, account_id, workspace_id)
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="No active membership found for user in this account"
+        )
+    return result
+
 @router.post("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_membership(
     user_id: str,
