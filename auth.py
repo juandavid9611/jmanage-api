@@ -3,7 +3,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, Header, Query
-from starlette.status import HTTP_403_FORBIDDEN, HTTP_401_UNAUTHORIZED
+from starlette.status import HTTP_403_FORBIDDEN
 from typing import Optional
 
 from JWTBearer import JWKS, JWTBearer, JWTAuthorizationCredentials
@@ -190,7 +190,7 @@ class PermissionChecker:
         """
         if account_role not in self.required_permissions:
             raise HTTPException(
-                status_code=HTTP_401_UNAUTHORIZED,
+                status_code=HTTP_403_FORBIDDEN,
                 detail='User does not have the required permissions for this account.'
             )
         return True

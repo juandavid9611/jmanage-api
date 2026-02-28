@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from jose import jwt, jwk, JWTError
 from starlette.requests import Request
 from jose.utils import base64url_decode
-from starlette.status import HTTP_403_FORBIDDEN
+from starlette.status import HTTP_401_UNAUTHORIZED
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 JWK = dict[str, str]
@@ -33,7 +33,7 @@ class JWTBearer(HTTPBearer):
             public_key = self.kid_to_jwk[jwt_credentials.header["kid"]]
         except KeyError:
             raise HTTPException(
-                status_code=HTTP_403_FORBIDDEN, detail="JWK public key not found"
+                status_code=HTTP_401_UNAUTHORIZED, detail="JWK public key not found"
             )
 
         key = jwk.construct(public_key)
@@ -47,7 +47,7 @@ class JWTBearer(HTTPBearer):
         if credentials:
             if not credentials.scheme == "Bearer":
                 raise HTTPException(
-                    status_code=HTTP_403_FORBIDDEN, detail="Wrong authentication method"
+                    status_code=HTTP_401_UNAUTHORIZED, detail="Wrong authentication method"
                 )
 
             jwt_token = credentials.credentials
@@ -63,9 +63,9 @@ class JWTBearer(HTTPBearer):
                     message=message,
                 )
             except JWTError as e:
-                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="JWK invalid")
+                raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="JWK invalid")
 
             if not self.verify_jwk_token(jwt_credentials):
-                raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="JWK invalid")
+                raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="JWK invalid")
 
             return jwt_credentials
