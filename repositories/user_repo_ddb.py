@@ -22,15 +22,29 @@ class UserRepo:
         self._table = user_table()
         self._group_gsi = os.getenv("USER_GROUP_GSI", "group_index")
 
-    def get(self, user_id: str) -> dict[str, Any] | None:
+    def get(self, user_id: str, account_id: str) -> dict[str, Any] | None:
+        """Get user by ID
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Access control is enforced at the service/API layer via memberships.
+        """
         resp = self._table.get_item(Key={"id": user_id})
         return resp.get("Item")
 
-    def list_all(self) -> Iterable[dict[str, Any]]:
+    def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
+        """List all users
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Returns all users. Account filtering should be done via memberships at service layer.
+        """
         return _scan_all(self._table)
 
-    def list_by_group(self, group: str) -> Iterable[dict[str, Any]]:
-        # TODO optimize with GSI if needed
+    def list_by_group(self, group: str, account_id: str) -> Iterable[dict[str, Any]]:
+        """List users by group
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Returns all users in the group. Account filtering should be done via memberships at service layer.
+        """
         return _scan_all(
             self._table,
             FilterExpression=Attr("user_group").eq(group)
@@ -39,7 +53,12 @@ class UserRepo:
     def put(self, item: dict[str, Any]) -> None:
         self._table.put_item(Item=item)
 
-    def update(self, user_id: str, updates: dict[str, Any]) -> None:
+    def update(self, user_id: str, account_id: str, updates: dict[str, Any]) -> None:
+        """Update user
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Access control is enforced at the service/API layer via memberships.
+        """
         update_expr_parts = []
         expr_attr_values = {}
         expr_attr_names = {}
@@ -60,5 +79,10 @@ class UserRepo:
             ReturnValues="ALL_NEW",
         )
 
-    def delete(self, user_id: str) -> None:
+    def delete(self, user_id: str, account_id: str) -> None:
+        """Delete user
+        
+        Note: account_id parameter is kept for API compatibility but not used.
+        Access control is enforced at the service/API layer via memberships.
+        """
         self._table.delete_item(Key={"id": user_id})

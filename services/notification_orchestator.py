@@ -174,6 +174,7 @@ class Notifications:
     def overdue_payments_processed(
         self,
         *,
+        account_id: str,
         user_name: str,
         pending_count: int,
         overdue_payments: list[dict[str, Any]],
@@ -218,7 +219,7 @@ class Notifications:
                     results[email] = e
         try:
             print("Sending Slack summary...")
-            send_overdue_summary(user_name=user_name, pending_count=pending_count, overdue_payments=overdue_payments)
+            send_overdue_summary(account_id=account_id, user_name=user_name, pending_count=pending_count, overdue_payments=overdue_payments)
             results["slack_summary"] = "sent"
         except Exception as e:
             results["slack_summary"] = e

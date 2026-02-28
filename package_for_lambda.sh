@@ -59,12 +59,4 @@ docker run --rm \
     # 5) Create final zip at repo root
     (cd "$BUILD_DIR" && zip -qr "../$ZIP_NAME" .)
   '
-# --- Git (opcional) ---
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo ">> Commit & push (opcional)"
-  git add .
-  git commit -m "Fix payment request creation. Remove user_metrics from user dict" || true
-  git push || true
-fi
-
 echo "✅ Built ${ZIP_NAME} (platform=${PLATFORM})."

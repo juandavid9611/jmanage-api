@@ -29,6 +29,8 @@ class CreateUser(BaseModel):
     id: str
     name: str
     email: str
+    accountId: str
+
 
 class PutUser(BaseModel):
     id: str
@@ -39,7 +41,6 @@ class PutUser(BaseModel):
     country: str
     city: str
     address: str
-    group: str
     rh: str
     eps: str
     emergencyContactName: str

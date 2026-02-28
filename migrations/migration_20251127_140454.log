@@ -1,0 +1,93 @@
+2025-11-27 14:05:00,518 - INFO - Found credentials in shared credentials file: ~/.aws/credentials
+2025-11-27 14:05:00,556 - INFO - Initialized migration with account_id: vittoriacd
+2025-11-27 14:05:00,556 - INFO - Dry run mode: False
+2025-11-27 14:05:00,556 - INFO - 
+Starting migration for 7 table(s)
+2025-11-27 14:05:00,556 - INFO - Default account_id: vittoriacd
+2025-11-27 14:05:00,556 - INFO - Dry run: False
+
+2025-11-27 14:05:00,556 - INFO - 
+================================================================================
+2025-11-27 14:05:00,556 - INFO - Migrating table: users
+2025-11-27 14:05:00,556 - INFO - ================================================================================
+2025-11-27 14:05:00,557 - INFO - Scanning table JmanageInfraStack-User00B015A1-1SWSW3IIXD01F...
+2025-11-27 14:05:01,397 - INFO - Scanned 99 items from JmanageInfraStack-User00B015A1-1SWSW3IIXD01F
+2025-11-27 14:05:01,397 - INFO - Found 99 items in JmanageInfraStack-User00B015A1-1SWSW3IIXD01F
+2025-11-27 14:05:01,397 - INFO - 99 items need account_id added
+2025-11-27 14:05:16,977 - INFO - Successfully updated 99 items in JmanageInfraStack-User00B015A1-1SWSW3IIXD01F
+2025-11-27 14:05:16,978 - INFO - 
+================================================================================
+2025-11-27 14:05:16,978 - INFO - Migrating table: tours
+2025-11-27 14:05:16,978 - INFO - ================================================================================
+2025-11-27 14:05:16,979 - INFO - Scanning table JmanageInfraStack-Tour5C62FF13-A2SG6KLPLG9K...
+2025-11-27 14:05:19,357 - INFO - Scanned 230 items from JmanageInfraStack-Tour5C62FF13-A2SG6KLPLG9K
+2025-11-27 14:05:19,357 - INFO - Found 230 items in JmanageInfraStack-Tour5C62FF13-A2SG6KLPLG9K
+2025-11-27 14:05:19,357 - INFO - 230 items need account_id added
+2025-11-27 14:05:34,877 - INFO - Progress: 100/230 items processed
+2025-11-27 14:05:50,617 - INFO - Progress: 200/230 items processed
+2025-11-27 14:05:55,462 - INFO - Successfully updated 230 items in JmanageInfraStack-Tour5C62FF13-A2SG6KLPLG9K
+2025-11-27 14:05:55,467 - INFO - 
+================================================================================
+2025-11-27 14:05:55,468 - INFO - Migrating table: workspaces
+2025-11-27 14:05:55,468 - INFO - ================================================================================
+2025-11-27 14:05:55,469 - INFO - Scanning table JmanageInfraStack-Workspace2F8C78CC-9S1XEZH5NLP5...
+2025-11-27 14:05:55,632 - INFO - Scanned 2 items from JmanageInfraStack-Workspace2F8C78CC-9S1XEZH5NLP5
+2025-11-27 14:05:55,632 - INFO - Found 2 items in JmanageInfraStack-Workspace2F8C78CC-9S1XEZH5NLP5
+2025-11-27 14:05:55,632 - INFO - 2 items need account_id added
+2025-11-27 14:05:55,944 - INFO - Successfully updated 2 items in JmanageInfraStack-Workspace2F8C78CC-9S1XEZH5NLP5
+2025-11-27 14:05:55,945 - INFO - 
+================================================================================
+2025-11-27 14:05:55,945 - INFO - Migrating table: products
+2025-11-27 14:05:55,945 - INFO - ================================================================================
+2025-11-27 14:05:55,949 - INFO - Scanning table JmanageInfraStack-Product896941B4-19E06EJP7OTDI...
+2025-11-27 14:05:56,111 - INFO - Scanned 0 items from JmanageInfraStack-Product896941B4-19E06EJP7OTDI
+2025-11-27 14:05:56,112 - INFO - Found 0 items in JmanageInfraStack-Product896941B4-19E06EJP7OTDI
+2025-11-27 14:05:56,112 - INFO - 0 items need account_id added
+2025-11-27 14:05:56,112 - INFO - Successfully updated 0 items in JmanageInfraStack-Product896941B4-19E06EJP7OTDI
+2025-11-27 14:05:56,112 - INFO - 
+================================================================================
+2025-11-27 14:05:56,112 - INFO - Migrating table: orders
+2025-11-27 14:05:56,112 - INFO - ================================================================================
+2025-11-27 14:05:56,115 - INFO - Scanning table JmanageInfraStack-Order702A5B72-AAEWI61NHQTC...
+2025-11-27 14:05:56,276 - INFO - Scanned 0 items from JmanageInfraStack-Order702A5B72-AAEWI61NHQTC
+2025-11-27 14:05:56,276 - INFO - Found 0 items in JmanageInfraStack-Order702A5B72-AAEWI61NHQTC
+2025-11-27 14:05:56,277 - INFO - 0 items need account_id added
+2025-11-27 14:05:56,277 - INFO - Successfully updated 0 items in JmanageInfraStack-Order702A5B72-AAEWI61NHQTC
+2025-11-27 14:05:56,277 - INFO - 
+================================================================================
+2025-11-27 14:05:56,277 - INFO - Migrating table: payment_requests
+2025-11-27 14:05:56,278 - INFO - ================================================================================
+2025-11-27 14:05:56,280 - INFO - Scanning table JmanageInfraStack-PaymentRequest928AFAA0-1JAEF2O0NCCTQ...
+2025-11-27 14:05:59,299 - INFO - Scanned 640 items from JmanageInfraStack-PaymentRequest928AFAA0-1JAEF2O0NCCTQ
+2025-11-27 14:06:00,730 - INFO - Scanned 293 items from JmanageInfraStack-PaymentRequest928AFAA0-1JAEF2O0NCCTQ
+2025-11-27 14:06:00,730 - INFO - Found 933 items in JmanageInfraStack-PaymentRequest928AFAA0-1JAEF2O0NCCTQ
+2025-11-27 14:06:00,730 - INFO - 933 items need account_id added
+2025-11-27 14:06:16,338 - INFO - Progress: 100/933 items processed
+2025-11-27 14:06:32,015 - INFO - Progress: 200/933 items processed
+2025-11-27 14:06:47,583 - INFO - Progress: 300/933 items processed
+2025-11-27 14:07:03,231 - INFO - Progress: 400/933 items processed
+2025-11-27 14:07:18,790 - INFO - Progress: 500/933 items processed
+2025-11-27 14:07:34,339 - INFO - Progress: 600/933 items processed
+2025-11-27 14:07:49,935 - INFO - Progress: 700/933 items processed
+2025-11-27 14:08:05,558 - INFO - Progress: 800/933 items processed
+2025-11-27 14:08:21,077 - INFO - Progress: 900/933 items processed
+2025-11-27 14:08:26,403 - INFO - Successfully updated 933 items in JmanageInfraStack-PaymentRequest928AFAA0-1JAEF2O0NCCTQ
+2025-11-27 14:08:26,413 - INFO - 
+================================================================================
+2025-11-27 14:08:26,414 - INFO - Migrating table: calendar
+2025-11-27 14:08:26,414 - INFO - ================================================================================
+2025-11-27 14:08:26,414 - INFO - Scanning table JmanageInfraStack-CalendarD341BA9B-1LNYC9AF3PFN6...
+2025-11-27 14:08:27,395 - INFO - Scanned 228 items from JmanageInfraStack-CalendarD341BA9B-1LNYC9AF3PFN6
+2025-11-27 14:08:27,395 - INFO - Found 228 items in JmanageInfraStack-CalendarD341BA9B-1LNYC9AF3PFN6
+2025-11-27 14:08:27,395 - INFO - 228 items need account_id added
+2025-11-27 14:08:42,973 - INFO - Progress: 100/228 items processed
+2025-11-27 14:08:58,659 - INFO - Progress: 200/228 items processed
+2025-11-27 14:09:03,170 - INFO - Successfully updated 228 items in JmanageInfraStack-CalendarD341BA9B-1LNYC9AF3PFN6
+2025-11-27 14:09:03,172 - INFO - ================================================================================
+2025-11-27 14:09:03,172 - INFO - MIGRATION SUMMARY
+2025-11-27 14:09:03,172 - INFO - ================================================================================
+2025-11-27 14:09:03,172 - INFO - Total records scanned: 1492
+2025-11-27 14:09:03,172 - INFO - Total records updated: 1492
+2025-11-27 14:09:03,172 - INFO - Total records skipped: 0
+2025-11-27 14:09:03,172 - INFO - Total errors: 0
+2025-11-27 14:09:03,172 - INFO - ================================================================================

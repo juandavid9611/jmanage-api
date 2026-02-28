@@ -1,6 +1,6 @@
 import os
 from .ddb_session import workspace_table
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from typing import Iterable, Any
 
 def _scan_all(table, **kwargs) -> list[dict[str, Any]]:
@@ -21,32 +21,65 @@ class WorkspaceRepo:
     def __init__(self):
         self._table = workspace_table()
         self._user_gsi = os.getenv("WORKSPACE_USER_GSI", "user_index")
+        self._account_gsi = os.getenv("WORKSPACE_ACCOUNT_GSI", "account_id_index")
 
-    def get(self, workspace_id: str) -> dict[str, Any] | None:
+    def get(self, workspace_id: str, account_id: str) -> dict[str, Any] | None:
+        """Get workspace by ID, validating it belongs to the account"""
         resp = self._table.get_item(Key={"id": workspace_id})
-        return resp.get("Item")
+        item = resp.get("Item")
+        
+        # Validate account ownership
+        if item and item.get("account_id") != account_id:
+            return None
+            
+        return item
 
-    def list_all(self) -> Iterable[dict[str, Any]]:
-        return _scan_all(self._table)
+    def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
+        """List all workspaces for the specified account"""
+        try:
+            resp = self._table.query(
+                IndexName=self._account_gsi,
+                KeyConditionExpression=Key("account_id").eq(account_id)
+            )
+            return resp.get("Items", [])
+        except Exception:
+            # Fallback to scan with filter
+            return _scan_all(
+                self._table,
+                FilterExpression=Attr("account_id").eq(account_id)
+            )
 
-    def list_by_group(self, group: str) -> Iterable[dict[str, Any]]:
-        # TODO optimize with GSI if needed
+    def list_by_group(self, group: str, account_id: str) -> Iterable[dict[str, Any]]:
+        """List workspaces by group within the specified account"""
         return _scan_all(
             self._table,
-            FilterExpression=Attr("user_group").eq(group)
+            FilterExpression=Attr("user_group").eq(group) & Attr("account_id").eq(account_id)
         )
 
-    def list_by_type(self, workspace_type: str) -> Iterable[dict[str, Any]]:
-        # TODO optimize with GSI if needed
+    def list_by_type(self, workspace_type: str, account_id: str) -> Iterable[dict[str, Any]]:
+        """List workspaces by type within the specified account"""
         return _scan_all(
             self._table,
-            FilterExpression=Attr("workspace_type").eq(workspace_type)
+            FilterExpression=Attr("workspace_type").eq(workspace_type) & Attr("account_id").eq(account_id)
         )
 
     def put(self, item: dict[str, Any]) -> None:
+        """Put workspace item (account_id must be in item)"""
+        if "account_id" not in item:
+            raise ValueError("account_id is required")
         self._table.put_item(Item=item)
 
-    def update(self, workspace_id: str, updates: dict[str, Any]) -> None:
+    def update(self, workspace_id: str, account_id: str, updates: dict[str, Any]) -> None:
+        """Update workspace, validating it belongs to the account"""
+        # Verify ownership
+        current = self.get(workspace_id, account_id)
+        if not current:
+            raise ValueError(f"Workspace {workspace_id} not found in account {account_id}")
+        
+        # Prevent account_id from being changed
+        if "account_id" in updates:
+            del updates["account_id"]
+        
         update_expr_parts = []
         expr_attr_values = {}
         expr_attr_names = {}
@@ -68,5 +101,10 @@ class WorkspaceRepo:
         )
         return resp.get("Attributes")
 
-    def delete(self, workspace_id: str) -> None:
+    def delete(self, workspace_id: str, account_id: str) -> None:
+        """Delete workspace, validating it belongs to the account"""
+        # Verify ownership before deleting
+        current = self.get(workspace_id, account_id)
+        if not current:
+            raise ValueError(f"Workspace {workspace_id} not found in account {account_id}")
         self._table.delete_item(Key={"id": workspace_id})

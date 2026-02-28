@@ -1,67 +1,73 @@
 import re
-from services.user_service import UserService
+from uuid import uuid4
+from services.membership_service import MembershipService
 from api.schemas.workspaces import PutWorkspace
 from typing import Any
 from repositories.workspace_repo_ddb import WorkspaceRepo
 
 
 class WorkspaceService:
-    def __init__(self, repo: WorkspaceRepo, user_svc: UserService):
+    def __init__(self, repo: WorkspaceRepo, membership_svc: MembershipService):
         self.repo = repo
-        self.user_svc = user_svc
-        self._excluded_fields = ["id"]
-        self._custom_mapping_keys = {"name": "tour_name", "location": "event_location"}
-        self._booker_bool_fields = {"approved", "late", "yellowCard", "redCard", "mvp"}
-        self._booker_int_fields = {"goals", "assists"}
+        self.membership_svc = membership_svc
+        self._excluded_fields = ["id"]  # Prevent id from being updated
 
-    def get(self, workspace_id: str) -> dict[str, Any] | None:
-        item = self.repo.get(workspace_id)
+    def get(self, workspace_id: str, account_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(workspace_id, account_id)
         if item:
             return item
         return None
 
-    def get_related(self, user) -> list[dict[str, Any]]:
-        items = self.repo.list_all()
-        if user["custom:role"] == "admin":
-            return [item for item in items]
-        user_db = self.user_svc.get(user["sub"])
-        if not user_db:
-            raise ValueError(f"User {user['sub']} not found")
-        related_items = []
-        for item in items:
-            if user_db.get("group") is None:
-                raise ValueError(f"User {user['sub']} has no group assigned") 
-            if item["id"] == user_db["group"]:
-                related_items.append(item)
-        return related_items
+    def get_related(self, user, account_id: str) -> list[dict[str, Any]]:
+        """Get all workspaces user has access to via memberships"""
+        user_id = user["sub"]
+        memberships = self.membership_svc.get_user_account_memberships(user_id, account_id)
+        
+        if not memberships:
+            return []
+        
+        # Create a mapping of workspace_id to role
+        workspace_roles = {m["workspace_id"]: m.get("role", "user") for m in memberships if m.get("workspace_id")}
+        
+        all_workspaces = self.repo.list_all(account_id)
+        
+        # Add role to each workspace
+        related_workspaces = []
+        for ws in all_workspaces:
+            if ws["id"] in workspace_roles:
+                workspace_with_role = {**ws, "role": workspace_roles[ws["id"]]}
+                related_workspaces.append(workspace_with_role)
+        
+        return related_workspaces
 
-    def list_workspaces(self) -> list[dict[str, Any]]:
-        return [item for item in self.repo.list_all()]
+    def list_workspaces(self, account_id: str) -> list[dict[str, Any]]:
+        return [item for item in self.repo.list_all(account_id)]
 
-    def create(self, item: PutWorkspace) -> dict[str, Any]:
-        new_workspace = self._get_new_workspace(item)
+    def create(self, item: PutWorkspace, account_id: str) -> dict[str, Any]:
+        new_workspace = self._get_new_workspace(item, account_id)
         self.repo.put(new_workspace)
         return new_workspace
 
-    def update(self, workspace_id: str, item: PutWorkspace) -> dict[str, Any] | None:
-        existing = self.repo.get(workspace_id)
+    def update(self, workspace_id: str, account_id: str, item: PutWorkspace) -> dict[str, Any] | None:
+        existing = self.repo.get(workspace_id, account_id)
         if not existing:
             return None
         updates = self._get_needed_updates(item)
         if not updates:
             return existing
-        self.repo.update(workspace_id, updates)
-        new_item = self.repo.get(workspace_id)
+        self.repo.update(workspace_id, account_id, updates)
+        new_item = self.repo.get(workspace_id, account_id)
         if not new_item:
             raise ValueError(f"Workspace {workspace_id} not found after update.")
         return new_item
 
-    def delete(self, tour_id: str) -> None:
-        self.repo.delete(tour_id)
+    def delete(self, tour_id: str, account_id: str) -> None:
+        self.repo.delete(tour_id, account_id)
 
-    def _get_new_workspace(self, item: PutWorkspace) -> dict[str, Any]:
+    def _get_new_workspace(self, item, account_id: str) -> dict[str, Any]:
         return {
-            "id": item.id,
+            "id": f"{uuid4().hex}",  # Auto-generate workspace ID
+            "account_id": account_id,
             "name": item.name,
             "logo": item.logo,
             "plan": item.plan,
@@ -77,6 +83,5 @@ class WorkspaceService:
         return updates
 
     def _map_attribute_key(self, key: str) -> str:
-        if key in self._custom_mapping_keys:
-            return self._custom_mapping_keys[key]
+        """Convert camelCase to snake_case"""
         return re.sub(r'(?<!^)(?=[A-Z])', '_', key).lower()

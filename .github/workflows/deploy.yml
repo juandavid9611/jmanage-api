@@ -1,0 +1,62 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [develop, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build Lambda zip
+        run: |
+          BUILD_DIR=".lambda_build"
+          ZIP_NAME="lambda_function.zip"
+          SRC_DIRS="api builders core repositories services utils"
+          ROOT_PY_FILES="app.py auth.py di.py JWTBearer.py"
+
+          rm -rf "$BUILD_DIR" && mkdir -p "$BUILD_DIR"
+
+          pip install --only-binary=:all: -r requirements.txt -t "$BUILD_DIR" --quiet
+
+          for d in $SRC_DIRS; do
+            [ -d "$d" ] && rsync -a "$d"/ "$BUILD_DIR/$d"/ \
+              --exclude "__pycache__" --exclude "*.pyc" --exclude ".DS_Store"
+          done
+
+          for f in $ROOT_PY_FILES; do
+            [ -f "$f" ] && cp "$f" "$BUILD_DIR/"
+          done
+
+          find "$BUILD_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find "$BUILD_DIR" -name "*.pyc" -delete 2>/dev/null || true
+
+          (cd "$BUILD_DIR" && zip -qr "../$ZIP_NAME" .)
+          echo "✅ Lambda zip built ($(du -sh $ZIP_NAME | cut -f1))"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to Lambda
+        env:
+          FUNCTION_NAME: ${{ github.ref_name == 'main' && 'jmanage-api-prod' || 'jmanage-api-dev' }}
+        run: |
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://lambda_function.zip \
+            --output text
+
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME"
+
+          echo "✅ Deployed to $FUNCTION_NAME"
