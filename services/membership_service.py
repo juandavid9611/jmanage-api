@@ -66,9 +66,9 @@ class MembershipService:
         
         # Find current active membership
         current = None
-        for m in memberships:
-            if m.get("status") == "active":
-                current = m
+        for membership in memberships:
+            if membership.get("status") == "active":
+                current = membership
                 break
         
         if not current:

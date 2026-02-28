@@ -43,3 +43,23 @@ def account_table():
 
 def file_table():
     return dynamodb.Table(os.getenv("FILE_TABLE_NAME"))
+
+
+def tournament_table():
+    return dynamodb.Table(os.getenv("TOURNAMENT_TABLE_NAME"))
+
+
+def tournament_team_table():
+    return dynamodb.Table(os.getenv("TOURNAMENT_TEAM_TABLE_NAME"))
+
+
+def tournament_player_table():
+    return dynamodb.Table(os.getenv("TOURNAMENT_PLAYER_TABLE_NAME"))
+
+
+def tournament_match_table():
+    return dynamodb.Table(os.getenv("TOURNAMENT_MATCH_TABLE_NAME"))
+
+
+def tournament_match_event_table():
+    return dynamodb.Table(os.getenv("TOURNAMENT_MATCH_EVENT_TABLE_NAME"))

@@ -99,3 +99,56 @@ def get_file_service() -> FileService:
     repo = FileRepo()
     s3 = S3Adapter()
     return FileService(repo, s3)
+
+
+# ── Tournament domain ───────────────────────────────────────────────
+
+from repositories.tournament_repo_ddb import TournamentRepo
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
+from repositories.tournament_match_repo_ddb import TournamentMatchRepo
+from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
+from services.tournament_service import TournamentService
+from services.tournament_team_service import TournamentTeamService
+from services.tournament_player_service import TournamentPlayerService
+from services.tournament_match_service import TournamentMatchService
+from services.tournament_match_event_service import TournamentMatchEventService
+from services.standings_service import StandingsService
+from services.tournament_stats_service import TournamentStatsService
+
+
+def get_tournament_service() -> TournamentService:
+    repo = TournamentRepo()
+    match_repo = TournamentMatchRepo()
+    standings_svc = StandingsService(match_repo)
+    return TournamentService(repo, standings_service=standings_svc)
+
+def get_tournament_team_service() -> TournamentTeamService:
+    repo = TournamentTeamRepo()
+    return TournamentTeamService(repo)
+
+def get_tournament_player_service() -> TournamentPlayerService:
+    repo = TournamentPlayerRepo()
+    match_repo = TournamentMatchRepo()
+    event_repo = TournamentMatchEventRepo()
+    return TournamentPlayerService(repo, match_repo, event_repo)
+
+def get_match_service() -> TournamentMatchService:
+    repo = TournamentMatchRepo()
+    event_repo = TournamentMatchEventRepo()
+    return TournamentMatchService(repo, event_repo)
+
+def get_match_event_service() -> TournamentMatchEventService:
+    repo = TournamentMatchEventRepo()
+    return TournamentMatchEventService(repo)
+
+def get_standings_service() -> StandingsService:
+    match_repo = TournamentMatchRepo()
+    return StandingsService(match_repo)
+
+def get_tournament_stats_service() -> TournamentStatsService:
+    match_repo = TournamentMatchRepo()
+    event_repo = TournamentMatchEventRepo()
+    team_repo = TournamentTeamRepo()
+    player_repo = TournamentPlayerRepo()
+    return TournamentStatsService(match_repo, event_repo, team_repo, player_repo)

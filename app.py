@@ -17,6 +17,7 @@ from api.orders import router as orders_router
 from api.memberships import router as memberships_router
 from api.accounts import router as accounts_router
 from api.files import router as files_router
+from api.tournaments import router as tournaments_router
 from core.error_handlers import install_error_handlers
 from core.logging_config import configure_logging
 from core.request_context import RequestContextMiddleware
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(memberships_router)
     app.include_router(accounts_router)
     app.include_router(files_router)
+    app.include_router(tournaments_router)
     # locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
     return app
 
