@@ -45,7 +45,7 @@ async def get_workspace_assists_stats(
 
 @router.get("/raise_error", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def raise_error():
-    raise HTTPException(status_code=500, detail="This is a test error for monitoring purposes. We got CI/CD working! Congrats!")
+    raise HTTPException(status_code=500, detail="This is a test error for monitoring purposes. You achieved Slack notifications!")
 
 
 @router.get("/wins_draws_loses", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
