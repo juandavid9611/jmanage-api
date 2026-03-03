@@ -66,7 +66,7 @@ class TournamentRules(BaseModel):
 
 class CreateTournament(BaseModel):
     name: str
-    season: str
+    season: str | None = None
     type: TournamentType
     rules: TournamentRules | None = None
 
