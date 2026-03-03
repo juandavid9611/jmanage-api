@@ -14,15 +14,29 @@ from api.schemas.tournaments import (
     BracketOverride,
 )
 from repositories.tournament_repo_ddb import TournamentRepo
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from repositories.tournament_match_repo_ddb import TournamentMatchRepo
 
 
 _DEFAULT_RULES = TournamentRules().dict()
 
+# Canonical progression order — used to sort bracket rounds correctly regardless
+# of the key order DynamoDB returns (which is not guaranteed to match insertion order).
+_BRACKET_ROUND_ORDER = ['roundOf32', 'roundOf16', 'quarterFinals', 'semiFinals', 'final']
+
 
 class TournamentService:
-    def __init__(self, repo: TournamentRepo, standings_service=None):
+    def __init__(
+        self,
+        repo: TournamentRepo,
+        standings_service=None,
+        team_repo: TournamentTeamRepo | None = None,
+        match_repo: TournamentMatchRepo | None = None,
+    ):
         self.repo = repo
         self.standings_service = standings_service
+        self.team_repo = team_repo
+        self.match_repo = match_repo
 
     # ── Tournament CRUD ──────────────────────────────────────────────
 
@@ -139,6 +153,9 @@ class TournamentService:
             entry["seed"] = seed
         target.setdefault("teams", []).append(entry)
         self.repo.update(tournament_id, {"groups": groups})
+        # Keep team record in sync so group_index GSI stays accurate
+        if self.team_repo:
+            self.team_repo.update(team_id, {"group_id": group_id})
         return target
 
     def remove_team_from_group(
@@ -156,6 +173,9 @@ class TournamentService:
         if len(target["teams"]) == original:
             return False
         self.repo.update(tournament_id, {"groups": groups})
+        # Clear group_id on the team record so group_index GSI stays accurate
+        if self.team_repo:
+            self.team_repo.clear_group(team_id)
         return True
 
     # ── Bracket (embedded in tournament item) ────────────────────────
@@ -188,9 +208,11 @@ class TournamentService:
             rules = t.get("rules", {})
             for g in groups:
                 slots = int(g.get("advancement_slots", 2))
+                group_team_ids = [te["team_id"] for te in g.get("teams", [])]
                 if self.standings_service:
                     standings = self.standings_service.get_standings(
-                        tournament_id, rules, group_id=g["id"]
+                        tournament_id, rules, group_id=g["id"],
+                        group_team_ids=group_team_ids
                     )
                     ranked = standings.get("items", [])
                     for entry in ranked[:slots]:
@@ -222,6 +244,8 @@ class TournamentService:
             match_slot["team1_id"] = body.team1_id
         if body.team2_id is not None:
             match_slot["team2_id"] = body.team2_id
+        if body.match_id is not None:
+            match_slot["match_id"] = body.match_id
         self.repo.update(tournament_id, {"bracket": bracket})
         return bracket
 
@@ -237,26 +261,68 @@ class TournamentService:
         if not t:
             return None
         bracket = t.get("bracket", {})
-        round_order = list(bracket.keys())
+        # Build round order using canonical progression; unknown rounds go at the end.
+        known = [r for r in _BRACKET_ROUND_ORDER if r in bracket]
+        unknown = [r for r in bracket if r not in _BRACKET_ROUND_ORDER]
+        round_order = known + unknown
 
+        # Look up match data once — used for both fallback search and score sync
+        match_data = None
+        if self.match_repo:
+            match_data = self.match_repo.get(match_id)
+
+        def _apply_winner(ri, round_name, mi, slot):
+            valid_teams = {slot.get("team1_id"), slot.get("team2_id")} - {None}
+            if valid_teams and winner_team_id not in valid_teams:
+                raise ValueError(
+                    f"winner_team_id '{winner_team_id}' is not a participant in this match"
+                )
+            # Self-heal: persist match_id if it was missing from the slot
+            if not slot.get("match_id"):
+                slot["match_id"] = match_id
+            slot["winner_team_id"] = winner_team_id
+            slot["status"] = "finished"
+            # Sync match score into the bracket slot for display
+            if match_data:
+                sh = match_data.get("score_home", -1)
+                sa = match_data.get("score_away", -1)
+                if sh is not None and sa is not None and int(sh) >= 0:
+                    home_id = match_data.get("home_team_id")
+                    if slot.get("team1_id") == home_id:
+                        slot["score"] = {"team1": int(sh), "team2": int(sa)}
+                    else:
+                        slot["score"] = {"team1": int(sa), "team2": int(sh)}
+            # Advance to next round
+            if ri + 1 < len(round_order):
+                next_round = round_order[ri + 1]
+                next_idx = mi // 2
+                next_matches = bracket[next_round]
+                if next_idx < len(next_matches):
+                    next_slot = next_matches[next_idx]
+                    if mi % 2 == 0:
+                        next_slot["team1_id"] = winner_team_id
+                    else:
+                        next_slot["team2_id"] = winner_team_id
+            self.repo.update(tournament_id, {"bracket": bracket})
+            return bracket
+
+        # Primary search: match by match_id stored in the bracket slot
         for ri, round_name in enumerate(round_order):
-            matches = bracket[round_name]
-            for mi, slot in enumerate(matches):
+            for mi, slot in enumerate(bracket[round_name]):
                 if slot.get("match_id") == match_id:
-                    slot["winner_team_id"] = winner_team_id
-                    # Advance to next round
-                    if ri + 1 < len(round_order):
-                        next_round = round_order[ri + 1]
-                        next_idx = mi // 2
-                        next_matches = bracket[next_round]
-                        if next_idx < len(next_matches):
-                            next_slot = next_matches[next_idx]
-                            if mi % 2 == 0:
-                                next_slot["team1_id"] = winner_team_id
-                            else:
-                                next_slot["team2_id"] = winner_team_id
-                    self.repo.update(tournament_id, {"bracket": bracket})
-                    return bracket
+                    return _apply_winner(ri, round_name, mi, slot)
+
+        # Fallback: match_id was never saved to the slot (created before the fix).
+        # Identify the slot by the participating teams from the actual match record.
+        if match_data:
+            home_id = match_data.get("home_team_id")
+            away_id = match_data.get("away_team_id")
+            if home_id and away_id:
+                for ri, round_name in enumerate(round_order):
+                    for mi, slot in enumerate(bracket[round_name]):
+                        if {slot.get("team1_id"), slot.get("team2_id")} == {home_id, away_id}:
+                            return _apply_winner(ri, round_name, mi, slot)
+
         return None
 
     # ── Helpers ──────────────────────────────────────────────────────

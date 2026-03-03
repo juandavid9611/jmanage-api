@@ -626,7 +626,10 @@ async def advance_winner(
     account_id: str = Depends(get_account_id),
     svc: TournamentService = Depends(get_tournament_service),
 ):
-    result = svc.advance_winner(tournament_id, account_id, match_id, winner_team_id)
+    try:
+        result = svc.advance_winner(tournament_id, account_id, match_id, winner_team_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if result is None:
         raise HTTPException(status_code=404, detail="Match not found in bracket")
     return result

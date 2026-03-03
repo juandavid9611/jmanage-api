@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -194,3 +193,4 @@ class BracketOverride(BaseModel):
     match_index: int
     team1_id: str | None = None
     team2_id: str | None = None
+    match_id: str | None = None

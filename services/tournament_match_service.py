@@ -122,7 +122,7 @@ class TournamentMatchService:
         events = self.event_repo.list_by_match(match_id)
         score_home = 0
         score_away = 0
-        goal_types = {"goal", "penalty_scored", "penalty"}
+        goal_types = {"goal", "penalty_scored"}
 
         for ev in events:
             etype = ev.get("type", "")

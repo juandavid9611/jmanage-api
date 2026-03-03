@@ -50,6 +50,14 @@ class TournamentTeamRepo:
             KeyConditionExpression=Key("group_id").eq(group_id),
         )
 
+    def clear_group(self, team_id: str) -> None:
+        """Remove the group_id attribute so the group_index GSI entry is deleted."""
+        self._table.update_item(
+            Key={"id": team_id},
+            UpdateExpression="REMOVE #g",
+            ExpressionAttributeNames={"#g": "group_id"},
+        )
+
     def update(self, team_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
         if not updates:
             return self.get(team_id)
