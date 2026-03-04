@@ -36,6 +36,24 @@ class TournamentTeamRepo:
     def delete(self, team_id: str) -> None:
         self._table.delete_item(Key={"id": team_id})
 
+    def count_by_tournament(self, tournament_id: str) -> int:
+        count = 0
+        start_key = None
+        kwargs: dict[str, Any] = {
+            "IndexName": self._tournament_gsi,
+            "KeyConditionExpression": Key("tournament_id").eq(tournament_id),
+            "Select": "COUNT",
+        }
+        while True:
+            if start_key:
+                kwargs["ExclusiveStartKey"] = start_key
+            resp = self._table.query(**kwargs)
+            count += resp.get("Count", 0)
+            start_key = resp.get("LastEvaluatedKey")
+            if not start_key:
+                break
+        return count
+
     def list_by_tournament(self, tournament_id: str) -> list[dict[str, Any]]:
         return _query_all(
             self._table,

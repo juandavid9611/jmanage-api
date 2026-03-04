@@ -70,8 +70,12 @@ async def list_tournaments(
     status: str | None = None,
     account_id: str = Depends(get_account_id),
     svc: TournamentService = Depends(get_tournament_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
 ):
-    return svc.list_tournaments(account_id, status=status)
+    tournaments = svc.list_tournaments(account_id, status=status)
+    for t in tournaments:
+        t["team_count"] = team_svc.count_teams(t["id"])
+    return tournaments
 
 
 @router.post("", dependencies=[Depends(ADMIN)])

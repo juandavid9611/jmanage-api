@@ -198,14 +198,18 @@ class TournamentService:
         if not t:
             return None
 
+        seed_map: dict | None = None
+
         if body.source == "seeds" and body.teams:
             seeded = sorted(body.teams, key=lambda x: x.get("seed", 999))
             team_ids = [s["team_id"] for s in seeded]
+            seed_map = {s["team_id"]: s["seed"] for s in seeded}
         elif body.source == "groups":
-            # Rank teams using real standings per group
-            team_ids = []
+            # Rank teams using real standings per group; interleave to avoid
+            # same-group first-round matchups: [A1, B1, A2, B2, ...]
             groups = t.get("groups", [])
             rules = t.get("rules", {})
+            group_qualifiers: list[list[str]] = []
             for g in groups:
                 slots = int(g.get("advancement_slots", 2))
                 group_team_ids = [te["team_id"] for te in g.get("teams", [])]
@@ -215,17 +219,29 @@ class TournamentService:
                         group_team_ids=group_team_ids
                     )
                     ranked = standings.get("items", [])
-                    for entry in ranked[:slots]:
-                        team_ids.append(entry["team_id"])
+                    group_qualifiers.append([e["team_id"] for e in ranked[:slots]])
                 else:
                     # Fallback: use embedded order
-                    for te in g.get("teams", [])[:slots]:
-                        team_ids.append(te["team_id"])
+                    group_qualifiers.append(
+                        [te["team_id"] for te in g.get("teams", [])[:slots]]
+                    )
+            # Interleave by slot position so cross-group matchups in round 1
+            max_slots = max((len(q) for q in group_qualifiers), default=0)
+            team_ids = []
+            current_seed = 1
+            seed_map = {}
+            for slot_idx in range(max_slots):
+                for g_qualified in group_qualifiers:
+                    if slot_idx < len(g_qualified):
+                        tid = g_qualified[slot_idx]
+                        team_ids.append(tid)
+                        seed_map[tid] = current_seed
+                        current_seed += 1
         else:
             team_ids = []
 
         # Build bracket rounds
-        bracket = self._build_bracket_structure(team_ids)
+        bracket = self._build_bracket_structure(team_ids, seed_map=seed_map)
         self.repo.update(tournament_id, {"bracket": bracket})
         return bracket
 
@@ -328,7 +344,9 @@ class TournamentService:
     # ── Helpers ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _build_bracket_structure(team_ids: list[str]) -> dict:
+    def _build_bracket_structure(
+        team_ids: list[str], seed_map: dict | None = None
+    ) -> dict:
         """Build a simple single-elimination bracket."""
         n = len(team_ids)
         if n < 2:
@@ -356,18 +374,26 @@ class TournamentService:
 
         bracket: dict = {}
         current_teams = padded
+        first_round = True
         for rnd in round_names:
             matches = []
             for i in range(0, len(current_teams), 2):
-                matches.append({
-                    "team1_id": current_teams[i],
-                    "team2_id": current_teams[i + 1] if i + 1 < len(current_teams) else None,
+                t1 = current_teams[i]
+                t2 = current_teams[i + 1] if i + 1 < len(current_teams) else None
+                slot: dict = {
+                    "team1_id": t1,
+                    "team2_id": t2,
                     "match_id": None,
                     "winner_team_id": None,
                     "score": {"team1": None, "team2": None},
                     "status": "pending",
-                })
+                }
+                if first_round and seed_map:
+                    slot["seed1"] = seed_map.get(t1) if t1 else None
+                    slot["seed2"] = seed_map.get(t2) if t2 else None
+                matches.append(slot)
             bracket[rnd] = matches
             current_teams = [None] * len(matches)
+            first_round = False
 
         return bracket
