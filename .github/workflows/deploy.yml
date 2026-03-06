@@ -50,6 +50,10 @@ jobs:
       - name: Deploy to Lambda
         env:
           FUNCTION_NAME: ${{ github.ref_name == 'main' && 'jmanage-api-prod' || 'jmanage-api-dev' }}
+          ONESIGNAL_APP_ID_DEV: ${{ secrets.ONESIGNAL_APP_ID_DEV }}
+          ONESIGNAL_REST_API_KEY_DEV: ${{ secrets.ONESIGNAL_REST_API_KEY_DEV }}
+          ONESIGNAL_APP_ID_PROD: ${{ secrets.ONESIGNAL_APP_ID_PROD }}
+          ONESIGNAL_REST_API_KEY_PROD: ${{ secrets.ONESIGNAL_REST_API_KEY_PROD }}
         run: |
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
