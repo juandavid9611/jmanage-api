@@ -54,7 +54,7 @@ class TournamentRules(BaseModel):
     points_per_draw: int = 1
     points_per_loss: int = 0
     total_matchweeks: int | None = None
-    legs: int = 2
+    legs: int = 1
     yellow_cards_for_suspension: int = 5
     extra_time_allowed: bool = True
     penalties_allowed: bool = True

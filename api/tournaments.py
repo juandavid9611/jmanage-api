@@ -211,17 +211,15 @@ async def group_standings(
     group_id: str,
     account_id: str = Depends(get_account_id),
     t_svc: TournamentService = Depends(get_tournament_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     s_svc: StandingsService = Depends(get_standings_service),
 ):
     t = t_svc.get_tournament(tournament_id, account_id)
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
-    # Get team IDs from embedded group data for fallback filtering
-    group_team_ids = []
-    for g in t.get("groups", []):
-        if g.get("id") == group_id:
-            group_team_ids = [gt["team_id"] for gt in g.get("teams", [])]
-            break
+    # Use team table's group_id index — authoritative source set during team assignment
+    group_teams = team_svc.list_teams(tournament_id, group_id=group_id)
+    group_team_ids = [tm["id"] for tm in group_teams]
     return s_svc.get_standings(
         tournament_id, t.get("rules", {}),
         group_id=group_id, group_team_ids=group_team_ids
