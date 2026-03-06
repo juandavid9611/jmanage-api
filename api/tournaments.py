@@ -70,8 +70,12 @@ async def list_tournaments(
     status: str | None = None,
     account_id: str = Depends(get_account_id),
     svc: TournamentService = Depends(get_tournament_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
 ):
-    return svc.list_tournaments(account_id, status=status)
+    tournaments = svc.list_tournaments(account_id, status=status)
+    for t in tournaments:
+        t["team_count"] = team_svc.count_teams(t["id"])
+    return tournaments
 
 
 @router.post("", dependencies=[Depends(ADMIN)])
@@ -207,17 +211,15 @@ async def group_standings(
     group_id: str,
     account_id: str = Depends(get_account_id),
     t_svc: TournamentService = Depends(get_tournament_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     s_svc: StandingsService = Depends(get_standings_service),
 ):
     t = t_svc.get_tournament(tournament_id, account_id)
     if not t:
         raise HTTPException(status_code=404, detail="Tournament not found")
-    # Get team IDs from embedded group data for fallback filtering
-    group_team_ids = []
-    for g in t.get("groups", []):
-        if g.get("id") == group_id:
-            group_team_ids = [gt["team_id"] for gt in g.get("teams", [])]
-            break
+    # Use team table's group_id index — authoritative source set during team assignment
+    group_teams = team_svc.list_teams(tournament_id, group_id=group_id)
+    group_team_ids = [tm["id"] for tm in group_teams]
     return s_svc.get_standings(
         tournament_id, t.get("rules", {}),
         group_id=group_id, group_team_ids=group_team_ids
@@ -497,9 +499,31 @@ async def generate_schedule(
     svc: TournamentMatchService = Depends(get_match_service),
 ):
     t = _require_tournament(t_svc, tournament_id, account_id)
+    legs = t.get("rules", {}).get("legs", 2)
+
+    # For hybrid tournaments without a specific group, generate one round-robin
+    # per group so matches are never cross-group.
+    if t.get("type") == "hybrid" and not body.group_id:
+        groups = t.get("groups", [])
+        total_matches = 0
+        total_matchweeks = 0
+        for g in groups:
+            gid = g["id"]
+            group_teams = team_svc.list_teams(tournament_id, group_id=gid)
+            group_team_ids = [tm["id"] for tm in group_teams]
+            if len(group_team_ids) < 2:
+                continue
+            group_body = body.copy(update={"group_id": gid})
+            try:
+                result = svc.generate_schedule(tournament_id, group_team_ids, group_body, legs=legs)
+                total_matches += result["matches_created"]
+                total_matchweeks = max(total_matchweeks, result["matchweeks_generated"])
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        return {"matches_created": total_matches, "matchweeks_generated": total_matchweeks}
+
     teams = team_svc.list_teams(tournament_id, group_id=body.group_id)
     team_ids = [tm["id"] for tm in teams]
-    legs = t.get("rules", {}).get("legs", 2)
     try:
         return svc.generate_schedule(tournament_id, team_ids, body, legs=legs)
     except ValueError as e:
@@ -626,7 +650,10 @@ async def advance_winner(
     account_id: str = Depends(get_account_id),
     svc: TournamentService = Depends(get_tournament_service),
 ):
-    result = svc.advance_winner(tournament_id, account_id, match_id, winner_team_id)
+    try:
+        result = svc.advance_winner(tournament_id, account_id, match_id, winner_team_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if result is None:
         raise HTTPException(status_code=404, detail="Match not found in bracket")
     return result

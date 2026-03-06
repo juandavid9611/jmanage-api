@@ -22,12 +22,9 @@ class StandingsService:
         group_team_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         """Compute standings from finished matches."""
-        matches = self.match_repo.list_by_tournament(
-            tournament_id, status="finished", group_id=group_id
-        )
-
-        # Fallback: if group_id returned nothing but we have team IDs, filter by teams
-        if not matches and group_team_ids:
+        # When group_team_ids is provided, always filter by team membership —
+        # matches may not have group_id set (e.g. generated without group context).
+        if group_team_ids:
             all_matches = self.match_repo.list_by_tournament(
                 tournament_id, status="finished"
             )
@@ -36,6 +33,10 @@ class StandingsService:
                 m for m in all_matches
                 if m.get("home_team_id") in team_set and m.get("away_team_id") in team_set
             ]
+        else:
+            matches = self.match_repo.list_by_tournament(
+                tournament_id, status="finished", group_id=group_id
+            )
 
         ppw = rules.get("points_per_win", 3)
         ppd = rules.get("points_per_draw", 1)

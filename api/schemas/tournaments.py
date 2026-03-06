@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,7 +54,7 @@ class TournamentRules(BaseModel):
     points_per_draw: int = 1
     points_per_loss: int = 0
     total_matchweeks: int | None = None
-    legs: int = 2
+    legs: int = 1
     yellow_cards_for_suspension: int = 5
     extra_time_allowed: bool = True
     penalties_allowed: bool = True
@@ -66,7 +65,7 @@ class TournamentRules(BaseModel):
 
 class CreateTournament(BaseModel):
     name: str
-    season: str
+    season: str | None = None
     type: TournamentType
     rules: TournamentRules | None = None
 
@@ -194,3 +193,4 @@ class BracketOverride(BaseModel):
     match_index: int
     team1_id: str | None = None
     team2_id: str | None = None
+    match_id: str | None = None

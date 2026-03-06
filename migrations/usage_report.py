@@ -65,11 +65,13 @@ class UsageReport:
         now = datetime.now(timezone.utc)
         jan_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         jan_start_epoch = int(jan_start.timestamp())
+        feb_end = now.replace(month=3, day=1, hour=0, minute=0, second=0, microsecond=0)
+        feb_end_epoch = int(feb_end.timestamp())
 
         print(f"\n{'='*60}")
         print(f"📊 Application Usage Report")
         print(f"   Generated: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print(f"   Period: January {now.year} – {now.strftime('%B %Y')}")
+        print(f"   Period: January – February {now.year}")
         print(f"{'='*60}\n")
 
         # ── 1. Users ──
@@ -77,18 +79,18 @@ class UsageReport:
         users = self.get_all_users()
         total_users = len(users)
 
-        # Users created this month (created_time is epoch seconds)
+        # Users created in January–February (created_time is epoch seconds)
         new_users = []
         for u in users:
             created = u.get("created_time")
-            if created and int(created) >= jan_start_epoch:
+            if created and jan_start_epoch <= int(created) < feb_end_epoch:
                 new_users.append(u)
 
         print(f"\n{'─'*60}")
-        print(f"1️⃣  USERS CREATED SINCE JANUARY {now.year}")
+        print(f"1️⃣  USERS CREATED IN JANUARY–FEBRUARY {now.year}")
         print(f"{'─'*60}")
         print(f"   Total users in system: {total_users}")
-        print(f"   Created since January: {len(new_users)}")
+        print(f"   Created in Jan–Feb: {len(new_users)}")
         if new_users:
             print()
             for u in new_users:
@@ -124,15 +126,15 @@ class UsageReport:
             for uid, uname in sorted(participating_users.items(), key=lambda x: x[1]):
                 print(f"   • {uname} (ID: {uid})")
 
-        # ── 3. Payment requests ──
+        # ── 3. Payment requests (Jan–Feb only) ──
         print(f"\n{'─'*60}")
-        print(f"3️⃣  USERS WITH PAYMENT REQUESTS (since January {now.year})")
+        print(f"3️⃣  USERS WITH PAYMENT REQUESTS (JAN–FEB {now.year})")
         print(f"{'─'*60}")
         print("💰 Loading payment requests...")
         payments = self.get_all_payment_requests()
 
-        # Filter to payments created since January
-        payments = [p for p in payments if int(p.get("created_time", 0)) >= jan_start_epoch]
+        # Filter to payments created in January–February
+        payments = [p for p in payments if jan_start_epoch <= int(p.get("created_time", 0)) < feb_end_epoch]
         total_payments = len(payments)
 
         # Collect unique user IDs from payment requests
@@ -180,7 +182,7 @@ class UsageReport:
         print(f"📋 SUMMARY")
         print(f"{'='*60}")
         print(f"   Total users:                        {total_users}")
-        print(f"   New users (since January):          {len(new_users)}")
+        print(f"   New users (Jan–Feb):                {len(new_users)}")
         print(f"   Users with event participation:     {len(participating_users)}")
         print(f"   Users with payment requests:        {len(users_with_payments)}")
         print(f"   Active users (events ∪ payments):   {len(union_user_ids)}")

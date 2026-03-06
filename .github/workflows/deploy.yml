@@ -50,6 +50,10 @@ jobs:
       - name: Deploy to Lambda
         env:
           FUNCTION_NAME: ${{ github.ref_name == 'main' && 'jmanage-api-prod' || 'jmanage-api-dev' }}
+          ONESIGNAL_APP_ID_DEV: ${{ secrets.ONESIGNAL_APP_ID_DEV }}
+          ONESIGNAL_REST_API_KEY_DEV: ${{ secrets.ONESIGNAL_REST_API_KEY_DEV }}
+          ONESIGNAL_APP_ID_PROD: ${{ secrets.ONESIGNAL_APP_ID_PROD }}
+          ONESIGNAL_REST_API_KEY_PROD: ${{ secrets.ONESIGNAL_REST_API_KEY_PROD }}
         run: |
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
@@ -60,3 +64,30 @@ jobs:
             --function-name "$FUNCTION_NAME"
 
           echo "✅ Deployed to $FUNCTION_NAME"
+
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_PROD: ${{ secrets.SLACK_WEBHOOK_URL_PROD }}
+          SLACK_WEBHOOK_DEV: ${{ secrets.SLACK_WEBHOOK_URL_DEV }}
+          JOB_STATUS: ${{ job.status }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          FUNCTION: ${{ github.ref_name == 'main' && 'jmanage-api-prod' || 'jmanage-api-dev' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$BRANCH" = "main" ]; then SLACK_WEBHOOK="$SLACK_WEBHOOK_PROD"; else SLACK_WEBHOOK="$SLACK_WEBHOOK_DEV"; fi
+
+          if [ "$JOB_STATUS" = "success" ]; then ICON="✅"; COLOR="good"
+          elif [ "$JOB_STATUS" = "failure" ]; then ICON="❌"; COLOR="danger"
+          else ICON="⚠️"; COLOR="warning"; fi
+
+          PAYLOAD=$(jq -n \
+            --arg color "$COLOR" \
+            --arg text "$ICON *jmanage-api* · \`$FUNCTION\` — deploy *$JOB_STATUS*" \
+            --arg footer "Branch: \`$BRANCH\`  ·  By $ACTOR  ·  <$RUN_URL|View run>" \
+            '{attachments:[{color:$color,text:$text,footer:$footer}]}')
+
+          curl -fsS -X POST "$SLACK_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

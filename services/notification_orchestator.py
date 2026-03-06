@@ -1,4 +1,4 @@
-import locale
+
 from api.schemas.calendar import PutCalendarEvent
 from repositories.notifications.ports import EmailSender
 from repositories.notifications.ports import InAppSender
@@ -29,7 +29,7 @@ class Notifications:
         else:
             self._admin_emails = ["jd_rodrigueza@javeriana.edu.co"]
             self._admin_email_notifications_enabled = False
-        # locale.setlocale(locale.LC_ALL, 'es_CO.UTF-8')  # Set to Colombian Spanish locale
+
 
     def _send_email(
         self,
@@ -117,11 +117,11 @@ class Notifications:
         except Exception as e:
             results["email"] = e
         try:
-            # TODO: locale is not working ValueError: Currency formatting is not possible using the 'C' locale.
+
             results["in_app"] = self._send_in_app_notification(
                 user_email=email,
                 title="Nuevo requerimiento de pago",
-                content=f"Se ha creado un nuevo requerimiento de pago por {locale.currency(amount, grouping=True)} con concepto '{concept}' y fecha de vencimiento {due_date}.",
+                content=f"Se ha creado un nuevo requerimiento de pago por ${amount:,.0f} con concepto '{concept}' y fecha de vencimiento {due_date}.",
                 category="payment",
                 action_url_path="dashboard/invoice/user-list"
             )
@@ -248,7 +248,7 @@ class Notifications:
             new_value = new_value.strftime("%d/%m/%Y")
             return {"name": "Fecha de vencimiento", "old_value": old_value, "new_value": new_value}
         if field["name"] == "totalAmount":
-            return {"name": "Valor", "old_value": locale.currency(field["old_value"], grouping=True), "new_value": locale.currency(field["new_value"], grouping=True)}
+            return {"name": "Valor", "old_value": f"${field['old_value']:,.0f}", "new_value": f"${field['new_value']:,.0f}"}
         if field["name"] == "concept":
             return {"name": "Concepto", "old_value": field["old_value"], "new_value": field["new_value"]}
         if field["name"] == "status":

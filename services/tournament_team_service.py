@@ -32,6 +32,9 @@ class TournamentTeamService:
     def get_team(self, team_id: str) -> dict[str, Any] | None:
         return self.repo.get(team_id)
 
+    def count_teams(self, tournament_id: str) -> int:
+        return self.repo.count_by_tournament(tournament_id)
+
     def list_teams(self, tournament_id: str, group_id: str | None = None) -> list[dict[str, Any]]:
         if group_id:
             return self.repo.list_by_group(group_id)

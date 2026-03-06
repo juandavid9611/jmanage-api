@@ -12,8 +12,10 @@ from repositories.calendar_repo_ddb import CalendarRepo
 from services.notification_orchestator import Notifications
 from services.payment_request_service import PaymentRequestService
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
-from repositories.notifications.magicbell_impl import MagicBellNotificationSender
+from repositories.notifications.onesignal_impl import OneSignalNotificationSender
 from repositories.notifications.courier_email_impl import CourierNotificationSender
+from repositories.notification_repo_ddb import NotificationRepo
+from repositories.notifications.ddb_impl import DdbInAppSender
 from services.workspace_service import WorkspaceService
 from services.product_service import ProductService
 from repositories.product_repo_ddb import ProductRepo
@@ -25,11 +27,27 @@ from repositories.account_repo_ddb import AccountRepo
 from services.account_service import AccountService
 from services.file_service import FileService
 from repositories.file_repo_ddb import FileRepo
+from repositories.tournament_repo_ddb import TournamentRepo
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
+from repositories.tournament_match_repo_ddb import TournamentMatchRepo
+from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
+from services.tournament_service import TournamentService
+from services.tournament_team_service import TournamentTeamService
+from services.tournament_player_service import TournamentPlayerService
+from services.tournament_match_service import TournamentMatchService
+from services.tournament_match_event_service import TournamentMatchEventService
+from services.standings_service import StandingsService
+from services.tournament_stats_service import TournamentStatsService
 
+
+def get_notification_repo() -> NotificationRepo:
+    return NotificationRepo()
 
 def get_notification_orchestator() -> Notifications:
     email_sender = CourierNotificationSender()
-    in_app_sender = MagicBellNotificationSender()
+    repo = get_notification_repo()
+    in_app_sender = DdbInAppSender(repo=repo, onesignal=OneSignalNotificationSender())
     return Notifications(email_sender=email_sender, in_app_sender=in_app_sender)
 
 def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
@@ -100,28 +118,13 @@ def get_file_service() -> FileService:
     s3 = S3Adapter()
     return FileService(repo, s3)
 
-
 # ── Tournament domain ───────────────────────────────────────────────
-
-from repositories.tournament_repo_ddb import TournamentRepo
-from repositories.tournament_team_repo_ddb import TournamentTeamRepo
-from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
-from repositories.tournament_match_repo_ddb import TournamentMatchRepo
-from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
-from services.tournament_service import TournamentService
-from services.tournament_team_service import TournamentTeamService
-from services.tournament_player_service import TournamentPlayerService
-from services.tournament_match_service import TournamentMatchService
-from services.tournament_match_event_service import TournamentMatchEventService
-from services.standings_service import StandingsService
-from services.tournament_stats_service import TournamentStatsService
-
-
 def get_tournament_service() -> TournamentService:
     repo = TournamentRepo()
     match_repo = TournamentMatchRepo()
     standings_svc = StandingsService(match_repo)
-    return TournamentService(repo, standings_service=standings_svc)
+    team_repo = TournamentTeamRepo()
+    return TournamentService(repo, standings_service=standings_svc, team_repo=team_repo, match_repo=match_repo)
 
 def get_tournament_team_service() -> TournamentTeamService:
     repo = TournamentTeamRepo()
