@@ -14,6 +14,8 @@ from services.payment_request_service import PaymentRequestService
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
 from repositories.notifications.onesignal_impl import OneSignalNotificationSender
 from repositories.notifications.courier_email_impl import CourierNotificationSender
+from repositories.notification_repo_ddb import NotificationRepo
+from repositories.notifications.ddb_impl import DdbInAppSender
 from services.workspace_service import WorkspaceService
 from services.product_service import ProductService
 from repositories.product_repo_ddb import ProductRepo
@@ -39,9 +41,13 @@ from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
 
 
+def get_notification_repo() -> NotificationRepo:
+    return NotificationRepo()
+
 def get_notification_orchestator() -> Notifications:
     email_sender = CourierNotificationSender()
-    in_app_sender = OneSignalNotificationSender()
+    repo = get_notification_repo()
+    in_app_sender = DdbInAppSender(repo=repo, onesignal=OneSignalNotificationSender())
     return Notifications(email_sender=email_sender, in_app_sender=in_app_sender)
 
 def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
