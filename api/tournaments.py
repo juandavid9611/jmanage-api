@@ -499,9 +499,31 @@ async def generate_schedule(
     svc: TournamentMatchService = Depends(get_match_service),
 ):
     t = _require_tournament(t_svc, tournament_id, account_id)
+    legs = t.get("rules", {}).get("legs", 2)
+
+    # For hybrid tournaments without a specific group, generate one round-robin
+    # per group so matches are never cross-group.
+    if t.get("type") == "hybrid" and not body.group_id:
+        groups = t.get("groups", [])
+        total_matches = 0
+        total_matchweeks = 0
+        for g in groups:
+            gid = g["id"]
+            group_teams = team_svc.list_teams(tournament_id, group_id=gid)
+            group_team_ids = [tm["id"] for tm in group_teams]
+            if len(group_team_ids) < 2:
+                continue
+            group_body = body.copy(update={"group_id": gid})
+            try:
+                result = svc.generate_schedule(tournament_id, group_team_ids, group_body, legs=legs)
+                total_matches += result["matches_created"]
+                total_matchweeks = max(total_matchweeks, result["matchweeks_generated"])
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        return {"matches_created": total_matches, "matchweeks_generated": total_matchweeks}
+
     teams = team_svc.list_teams(tournament_id, group_id=body.group_id)
     team_ids = [tm["id"] for tm in teams]
-    legs = t.get("rules", {}).get("legs", 2)
     try:
         return svc.generate_schedule(tournament_id, team_ids, body, legs=legs)
     except ValueError as e:

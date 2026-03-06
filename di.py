@@ -12,7 +12,7 @@ from repositories.calendar_repo_ddb import CalendarRepo
 from services.notification_orchestator import Notifications
 from services.payment_request_service import PaymentRequestService
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
-from repositories.notifications.magicbell_impl import MagicBellNotificationSender
+from repositories.notifications.onesignal_impl import OneSignalNotificationSender
 from repositories.notifications.courier_email_impl import CourierNotificationSender
 from services.workspace_service import WorkspaceService
 from services.product_service import ProductService
@@ -41,7 +41,7 @@ from services.tournament_stats_service import TournamentStatsService
 
 def get_notification_orchestator() -> Notifications:
     email_sender = CourierNotificationSender()
-    in_app_sender = MagicBellNotificationSender()
+    in_app_sender = OneSignalNotificationSender()
     return Notifications(email_sender=email_sender, in_app_sender=in_app_sender)
 
 def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
