@@ -6,11 +6,13 @@ from typing import Any
 
 from api.schemas.tournaments import CreateTeam, PatchTeam
 from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from repositories.tournament_repo_ddb import TournamentRepo
 
 
 class TournamentTeamService:
-    def __init__(self, repo: TournamentTeamRepo):
+    def __init__(self, repo: TournamentTeamRepo, tournament_repo: TournamentRepo | None = None):
         self.repo = repo
+        self.tournament_repo = tournament_repo
 
     def create_team(self, tournament_id: str, body: CreateTeam) -> dict[str, Any]:
         item = {
@@ -27,6 +29,8 @@ class TournamentTeamService:
         if body.group_id:
             item["group_id"] = body.group_id
         self.repo.put(item)
+        if self.tournament_repo:
+            self.tournament_repo.increment_team_count(tournament_id)
         return item
 
     def get_team(self, team_id: str) -> dict[str, Any] | None:
@@ -54,6 +58,8 @@ class TournamentTeamService:
         if not existing:
             return False
         self.repo.delete(team_id)
+        if self.tournament_repo:
+            self.tournament_repo.decrement_team_count(existing.get("tournament_id", ""))
         return True
 
     def is_team_manager(self, team_id: str, user_id: str) -> bool:

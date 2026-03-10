@@ -54,6 +54,20 @@ class TournamentRepo:
             items = [i for i in items if i.get("status") == status]
         return items
 
+    def increment_team_count(self, tournament_id: str) -> None:
+        self._table.update_item(
+            Key={"id": tournament_id},
+            UpdateExpression="ADD team_count :one",
+            ExpressionAttributeValues={":one": 1},
+        )
+
+    def decrement_team_count(self, tournament_id: str) -> None:
+        self._table.update_item(
+            Key={"id": tournament_id},
+            UpdateExpression="ADD team_count :neg",
+            ExpressionAttributeValues={":neg": -1},
+        )
+
     # ── Partial update ───────────────────────────────────────────────
 
     def update(self, tournament_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:

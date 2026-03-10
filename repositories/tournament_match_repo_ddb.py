@@ -24,6 +24,8 @@ class TournamentMatchRepo:
     def __init__(self):
         self._table = tournament_match_table()
         self._tournament_gsi = os.getenv("MATCH_TOURNAMENT_GSI", "tournament_index")
+        self._matchweek_gsi = os.getenv("MATCH_MATCHWEEK_GSI", "matchweek_index")
+        self._status_gsi = os.getenv("MATCH_STATUS_GSI", "status_index")
 
     def get(self, match_id: str) -> dict[str, Any] | None:
         resp = self._table.get_item(Key={"id": match_id})
@@ -52,9 +54,25 @@ class TournamentMatchRepo:
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Query all matches for a tournament, with optional client-side filters."""
+        """Query matches for a tournament. Uses dedicated GSIs for matchweek and status-only filters."""
+        # Fast path: matchweek filter only — use matchweek_index GSI
+        if matchweek is not None and not status and not team_id and not round_name and not group_id and not date_from and not date_to:
+            return _query_all(
+                self._table,
+                IndexName=self._matchweek_gsi,
+                KeyConditionExpression=Key("tournament_id").eq(tournament_id) & Key("matchweek").eq(matchweek),
+            )
+
+        # Fast path: status-only filter — use status_index GSI
+        if status and matchweek is None and not team_id and not round_name and not group_id and not date_from and not date_to:
+            return _query_all(
+                self._table,
+                IndexName=self._status_gsi,
+                KeyConditionExpression=Key("tournament_id").eq(tournament_id) & Key("status").eq(status),
+            )
+
+        # General path: query by date range via tournament_index, then filter in Python
         kce = Key("tournament_id").eq(tournament_id)
-        # Date range filtering via sort key when possible
         if date_from and date_to:
             kce = kce & Key("date").between(date_from, date_to)
         elif date_from:
@@ -68,7 +86,7 @@ class TournamentMatchRepo:
             KeyConditionExpression=kce,
         )
 
-        # Client-side filters
+        # Client-side filters for combined filter cases
         if matchweek is not None:
             items = [i for i in items if i.get("matchweek") == matchweek]
         if status:

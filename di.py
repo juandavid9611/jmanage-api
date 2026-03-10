@@ -128,7 +128,8 @@ def get_tournament_service() -> TournamentService:
 
 def get_tournament_team_service() -> TournamentTeamService:
     repo = TournamentTeamRepo()
-    return TournamentTeamService(repo)
+    tournament_repo = TournamentRepo()
+    return TournamentTeamService(repo, tournament_repo=tournament_repo)
 
 def get_tournament_player_service() -> TournamentPlayerService:
     repo = TournamentPlayerRepo()
