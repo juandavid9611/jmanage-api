@@ -49,6 +49,7 @@ class TournamentService:
             "season": body.season,
             "type": body.type.value,
             "status": "draft",
+            "is_public": body.is_public,
             "current_matchweek": 0,
             "rules": rules,
             "groups": [],
@@ -63,6 +64,21 @@ class TournamentService:
         if item and item.get("account_id") == account_id:
             return item
         return None
+
+    def get_public_tournament(self, tournament_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(tournament_id)
+        if item and item.get("is_public"):
+            return item
+        return None
+
+    def list_public_tournaments(self, status: str | None = None) -> dict[str, Any]:
+        all_items = self.repo.list_public()
+        counts: dict[str, int] = {}
+        for item in all_items:
+            s = item.get("status", "")
+            counts[s] = counts.get(s, 0) + 1
+        items = [i for i in all_items if i.get("status") == status] if status else all_items
+        return {"items": items, "counts_by_status": counts}
 
     def list_tournaments(self, account_id: str, status: str | None = None) -> dict[str, Any]:
         all_items = self.repo.list_by_account(account_id)

@@ -44,6 +44,21 @@ class TournamentRepo:
 
     # ── List / query ─────────────────────────────────────────────────
 
+    def list_public(self) -> list[dict[str, Any]]:
+        """Scan for all tournaments with is_public=True across all accounts."""
+        items: list[dict[str, Any]] = []
+        kwargs: dict[str, Any] = {"FilterExpression": Attr("is_public").eq(True)}
+        start_key = None
+        while True:
+            if start_key:
+                kwargs["ExclusiveStartKey"] = start_key
+            resp = self._table.scan(**kwargs)
+            items.extend(resp.get("Items", []))
+            start_key = resp.get("LastEvaluatedKey")
+            if not start_key:
+                break
+        return items
+
     def list_by_account(self, account_id: str, status: str | None = None) -> list[dict[str, Any]]:
         items = _query_all(
             self._table,

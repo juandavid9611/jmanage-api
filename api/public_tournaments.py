@@ -1,6 +1,7 @@
 """Public Tournaments API — read-only endpoints without authentication.
 
-All endpoints require `account_id` as a query parameter.
+Tournaments are accessible publicly only when `is_public=True`.
+No account_id or auth token required.
 """
 
 from typing import Optional
@@ -23,27 +24,29 @@ from services.tournament_team_service import TournamentTeamService
 router = APIRouter(prefix="/public/tournaments", tags=["public"])
 
 
+def _get_public_or_404(tournament_id: str, svc: TournamentService) -> dict:
+    t = svc.get_public_tournament(tournament_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    return t
+
+
 # ── Tournaments ────────────────────────────────────────────────────────
 
 @router.get("")
 async def list_public_tournaments(
-    account_id: str = Query(...),
     status: Optional[str] = Query(None),
     svc: TournamentService = Depends(get_tournament_service),
 ):
-    return svc.list_tournaments(account_id, status=status)
+    return svc.list_public_tournaments(status=status)
 
 
 @router.get("/{tournament_id}")
 async def get_public_tournament(
     tournament_id: str,
-    account_id: str = Query(...),
     svc: TournamentService = Depends(get_tournament_service),
 ):
-    item = svc.get_tournament(tournament_id, account_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Tournament not found")
-    return item
+    return _get_public_or_404(tournament_id, svc)
 
 
 # ── Groups ─────────────────────────────────────────────────────────────
@@ -51,13 +54,10 @@ async def get_public_tournament(
 @router.get("/{tournament_id}/groups")
 async def get_public_groups(
     tournament_id: str,
-    account_id: str = Query(...),
     svc: TournamentService = Depends(get_tournament_service),
 ):
-    groups = svc.list_groups(tournament_id, account_id)
-    if groups is None:
-        raise HTTPException(status_code=404, detail="Tournament not found")
-    return groups
+    t = _get_public_or_404(tournament_id, svc)
+    return t.get("groups", [])
 
 
 # ── Teams ──────────────────────────────────────────────────────────────
@@ -65,14 +65,11 @@ async def get_public_groups(
 @router.get("/{tournament_id}/teams")
 async def get_public_teams(
     tournament_id: str,
-    account_id: str = Query(...),
-    svc: TournamentTeamService = Depends(get_tournament_team_service),
-    tournament_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentService = Depends(get_tournament_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
 ):
-    item = tournament_svc.get_tournament(tournament_id, account_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Tournament not found")
-    return svc.list_teams(tournament_id)
+    _get_public_or_404(tournament_id, svc)
+    return team_svc.list_teams(tournament_id)
 
 
 # ── Matches ────────────────────────────────────────────────────────────
@@ -80,16 +77,13 @@ async def get_public_teams(
 @router.get("/{tournament_id}/matches")
 async def get_public_matches(
     tournament_id: str,
-    account_id: str = Query(...),
     matchweek: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
-    svc: TournamentMatchService = Depends(get_match_service),
-    tournament_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentService = Depends(get_tournament_service),
+    match_svc: TournamentMatchService = Depends(get_match_service),
 ):
-    item = tournament_svc.get_tournament(tournament_id, account_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Tournament not found")
-    return svc.list_matches(tournament_id, matchweek=matchweek, status=status)
+    _get_public_or_404(tournament_id, svc)
+    return match_svc.list_matches(tournament_id, matchweek=matchweek, status=status)
 
 
 # ── Standings ──────────────────────────────────────────────────────────
@@ -97,14 +91,11 @@ async def get_public_matches(
 @router.get("/{tournament_id}/standings")
 async def get_public_standings(
     tournament_id: str,
-    account_id: str = Query(...),
-    tournament_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentService = Depends(get_tournament_service),
     team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     s_svc: StandingsService = Depends(get_standings_service),
 ):
-    t = tournament_svc.get_tournament(tournament_id, account_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Tournament not found")
+    t = _get_public_or_404(tournament_id, svc)
     groups = t.get("groups", [])
     if groups:
         teams = team_svc.list_teams(tournament_id)
@@ -117,13 +108,10 @@ async def get_public_standings(
 @router.get("/{tournament_id}/stats")
 async def get_public_stats(
     tournament_id: str,
-    account_id: str = Query(...),
-    tournament_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentService = Depends(get_tournament_service),
     stats_svc: TournamentStatsService = Depends(get_tournament_stats_service),
 ):
-    t = tournament_svc.get_tournament(tournament_id, account_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Tournament not found")
+    t = _get_public_or_404(tournament_id, svc)
     return stats_svc.get_stats(
         tournament_id,
         current_matchweek=t.get("current_matchweek", 0),
@@ -137,11 +125,8 @@ async def get_public_stats(
 @router.get("/{tournament_id}/top-scorers")
 async def get_public_top_scorers(
     tournament_id: str,
-    account_id: str = Query(...),
-    tournament_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentService = Depends(get_tournament_service),
     stats_svc: TournamentStatsService = Depends(get_tournament_stats_service),
 ):
-    t = tournament_svc.get_tournament(tournament_id, account_id)
-    if not t:
-        raise HTTPException(status_code=404, detail="Tournament not found")
+    _get_public_or_404(tournament_id, svc)
     return stats_svc.get_top_scorers(tournament_id)

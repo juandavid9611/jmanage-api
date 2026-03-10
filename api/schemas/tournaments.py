@@ -68,6 +68,7 @@ class CreateTournament(BaseModel):
     season: str | None = None
     type: TournamentType
     rules: TournamentRules | None = None
+    is_public: bool = False
 
 
 class PatchTournament(BaseModel):
@@ -75,6 +76,7 @@ class PatchTournament(BaseModel):
     status: TournamentStatus | None = None
     current_matchweek: int | None = None
     rules: TournamentRules | None = None
+    is_public: bool | None = None
 
 
 # ── Groups ───────────────────────────────────────────────────────────────
