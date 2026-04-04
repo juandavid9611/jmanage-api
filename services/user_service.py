@@ -139,6 +139,18 @@ class UserService:
             if workspace_id:
                 self.membership_svc.disable_membership(user_id, account_id, workspace_id)
 
+    def get_tour_preferences(self, user_id: str, account_id: str) -> dict:
+        item = self.repo.get(user_id, account_id)
+        return item.get("tour_preferences", {}) if item else {}
+
+    def mark_tour_seen(self, user_id: str, account_id: str, tour_key: str) -> None:
+        existing = self.repo.get(user_id, account_id)
+        if not existing:
+            raise ValueError(f"User {user_id} not found.")
+        prefs = existing.get("tour_preferences", {})
+        prefs[tour_key] = True
+        self.repo.update(user_id, account_id, {"tour_preferences": prefs})
+
     def update_user_avatar_url(self, user_id: str, account_id: str, item: PutUserAvatar) -> dict[str, Any] | None:
         existing = self.repo.get(user_id, account_id)
         if not existing:
@@ -270,14 +282,14 @@ class UserService:
         """Get assist stats for all users in a workspace"""
         # 1. Get all users in the workspace
         users = self.list_users(account_id, group=workspace_id, include_disabled=False)
-        
+
         # 2. Get all tours for the workspace
         tours = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type=None)
-        
+
         # 3. Calculate global totals (total matches, total trainings)
         total_matches = 0
         total_trainings = 0
-        
+
         for tour in tours:
             event_type = tour.get("eventType")
             if event_type == "match":

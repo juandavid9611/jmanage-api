@@ -4,7 +4,7 @@ from di import get_user_service
 from auth import PermissionChecker, get_account_id
 from services.user_service import UserService
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from api.schemas.users import PutUser, CreateUser, PutUserAvatar, PutUserMetrics
+from api.schemas.users import PutUser, CreateUser, PutUserAvatar, PutUserMetrics, PutTourPreferences
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -81,6 +81,24 @@ async def disable_user(
 ):
     svc.disable(user_id, account_id)
     return {"disabled_user_id": user_id}
+
+@router.get("/{user_id}/tour-preferences", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+async def get_tour_preferences(
+    user_id: str,
+    account_id: str = Depends(get_account_id),
+    svc: UserService = Depends(get_user_service)
+):
+    return svc.get_tour_preferences(user_id, account_id)
+
+@router.put("/{user_id}/tour-preferences", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+async def mark_tour_seen(
+    user_id: str,
+    body: PutTourPreferences,
+    account_id: str = Depends(get_account_id),
+    svc: UserService = Depends(get_user_service)
+):
+    svc.mark_tour_seen(user_id, account_id, body.tourKey)
+    return {"updated": True}
 
 @router.put("/{user_id}/avatar", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def update_user_avatar_url(

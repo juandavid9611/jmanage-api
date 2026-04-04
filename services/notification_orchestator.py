@@ -240,6 +240,15 @@ class Notifications:
             action_url_path="dashboard/calendar"
         )
     
+    def votation_opened(self, *, user_emails: list[str], month: str) -> str:
+        return self._send_bulk_in_app_notification(
+            user_emails=user_emails,
+            title="¡Vota por el jugador del mes!",
+            content=f"La votación de {month} está abierta. Entra y vota por tu favorito.",
+            category="votation_opened",
+            action_url_path="dashboard/attendance",
+        )
+
     def _get_formatted_notification_field(self, field):
         if field["name"] == "dueDate":
             old_value = try_parsing_date(field["old_value"])
