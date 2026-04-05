@@ -39,6 +39,8 @@ from services.tournament_match_service import TournamentMatchService
 from services.tournament_match_event_service import TournamentMatchEventService
 from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
+from repositories.votation_repo_ddb import VotationRepo
+from services.votation_service import VotationService
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -128,7 +130,8 @@ def get_tournament_service() -> TournamentService:
 
 def get_tournament_team_service() -> TournamentTeamService:
     repo = TournamentTeamRepo()
-    return TournamentTeamService(repo)
+    tournament_repo = TournamentRepo()
+    return TournamentTeamService(repo, tournament_repo=tournament_repo)
 
 def get_tournament_player_service() -> TournamentPlayerService:
     repo = TournamentPlayerRepo()
@@ -148,6 +151,12 @@ def get_match_event_service() -> TournamentMatchEventService:
 def get_standings_service() -> StandingsService:
     match_repo = TournamentMatchRepo()
     return StandingsService(match_repo)
+
+def get_votation_service() -> VotationService:
+    repo = VotationRepo()
+    tour_repo = TourRepo()
+    return VotationService(repo, tour_repo, get_user_service(), get_notification_orchestator())
+
 
 def get_tournament_stats_service() -> TournamentStatsService:
     match_repo = TournamentMatchRepo()

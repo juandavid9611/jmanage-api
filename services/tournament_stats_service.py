@@ -25,7 +25,13 @@ class TournamentStatsService:
         self.team_repo = team_repo
         self.player_repo = player_repo
 
-    def get_stats(self, tournament_id: str, current_matchweek: int = 0, total_matchweeks: int | None = None) -> dict[str, Any]:
+    def get_stats(
+        self,
+        tournament_id: str,
+        current_matchweek: int = 0,
+        total_matchweeks: int | None = None,
+        tournament: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         all_matches = self.match_repo.list_by_tournament(tournament_id)
         teams = self.team_repo.list_by_tournament(tournament_id)
 
@@ -34,15 +40,15 @@ class TournamentStatsService:
         matches_played = len(finished)
         matches_remaining = total_matches - matches_played
 
-        # Compute goals and cards from events
+        # Compute goals and cards from events (batch: 1 query per finished match)
         total_goals = 0
         total_yellow_cards = 0
         total_red_cards = 0
 
         goal_types = {"goal", "own_goal", "penalty_scored"}
+        events_by_match = self.event_repo.batch_list_by_matches([m["id"] for m in finished])
 
-        for match in finished:
-            events = self.event_repo.list_by_match(match["id"])
+        for events in events_by_match.values():
             for ev in events:
                 etype = ev.get("type", "")
                 if etype in goal_types:
@@ -53,6 +59,16 @@ class TournamentStatsService:
                     total_red_cards += 1
 
         avg_goals = round(total_goals / matches_played, 2) if matches_played > 0 else 0.0
+
+        # Resolve champion from bracket (no extra DB query needed — bracket is embedded in tournament)
+        champion = None
+        if tournament:
+            winner_id = (tournament.get("bracket") or {}).get("final", [{}])[0].get("winner_team_id") if (tournament.get("bracket") or {}).get("final") else None
+            if winner_id:
+                teams_map = {t["id"]: t for t in teams}
+                w = teams_map.get(winner_id, {})
+                if w:
+                    champion = {"team_id": winner_id, "name": w.get("name", ""), "short_name": w.get("short_name", "")}
 
         return {
             "as_of": datetime.utcnow().isoformat(),
@@ -66,6 +82,7 @@ class TournamentStatsService:
             "current_matchweek": current_matchweek,
             "total_matchweeks": total_matchweeks,
             "total_teams": len(teams),
+            "champion": champion,
         }
 
     def get_top_scorers(self, tournament_id: str, limit: int = 50) -> list[dict[str, Any]]:
@@ -77,8 +94,9 @@ class TournamentStatsService:
         # Accumulate: player_id -> {goals, penalties, own_goals}
         scorers: dict[str, dict] = {}
 
+        events_by_match = self.event_repo.batch_list_by_matches([m["id"] for m in finished])
         for match in finished:
-            events = self.event_repo.list_by_match(match["id"])
+            events = events_by_match.get(match["id"], [])
             for ev in events:
                 etype = ev.get("type", "")
                 pid = ev.get("player_id")

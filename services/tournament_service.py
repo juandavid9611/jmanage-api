@@ -49,6 +49,7 @@ class TournamentService:
             "season": body.season,
             "type": body.type.value,
             "status": "draft",
+            "is_public": body.is_public,
             "current_matchweek": 0,
             "rules": rules,
             "groups": [],
@@ -64,8 +65,29 @@ class TournamentService:
             return item
         return None
 
-    def list_tournaments(self, account_id: str, status: str | None = None) -> list[dict[str, Any]]:
-        return self.repo.list_by_account(account_id, status=status)
+    def get_public_tournament(self, tournament_id: str) -> dict[str, Any] | None:
+        item = self.repo.get(tournament_id)
+        if item and item.get("is_public"):
+            return item
+        return None
+
+    def list_public_tournaments(self, status: str | None = None) -> dict[str, Any]:
+        all_items = self.repo.list_public()
+        counts: dict[str, int] = {}
+        for item in all_items:
+            s = item.get("status", "")
+            counts[s] = counts.get(s, 0) + 1
+        items = [i for i in all_items if i.get("status") == status] if status else all_items
+        return {"items": items, "counts_by_status": counts}
+
+    def list_tournaments(self, account_id: str, status: str | None = None) -> dict[str, Any]:
+        all_items = self.repo.list_by_account(account_id)
+        counts: dict[str, int] = {}
+        for item in all_items:
+            s = item.get("status", "")
+            counts[s] = counts.get(s, 0) + 1
+        items = [i for i in all_items if i.get("status") == status] if status else all_items
+        return {"items": items, "counts_by_status": counts}
 
     def update_tournament(self, tournament_id: str, account_id: str, body: PatchTournament) -> dict[str, Any] | None:
         existing = self.get_tournament(tournament_id, account_id)
@@ -344,10 +366,31 @@ class TournamentService:
     # ── Helpers ──────────────────────────────────────────────────────
 
     @staticmethod
+    def _bracket_seed_positions(size: int) -> list[int]:
+        """Return the position indices for standard bracket seeding.
+
+        Produces the ordering so that consecutive pairs give:
+          (seed 1 vs seed N), (seed 4 vs seed N-3), (seed 2 vs seed N-1), ...
+        ensuring top seeds never meet until later rounds.
+        """
+        if size == 1:
+            return [0]
+        half = size // 2
+        top = TournamentService._bracket_seed_positions(half)
+        bottom = [size - 1 - i for i in top]
+        return [x for pair in zip(top, bottom) for x in pair]
+
+    @staticmethod
     def _build_bracket_structure(
         team_ids: list[str], seed_map: dict | None = None
     ) -> dict:
-        """Build a simple single-elimination bracket."""
+        """Build a simple single-elimination bracket.
+
+        When seed_map is provided teams are reordered using standard bracket
+        seeding so that seed 1 faces the lowest seed, seed 2 faces the second
+        lowest, etc.  This produces correct cross-group matchups for hybrid
+        tournaments (e.g. Group A 1st vs Group B 2nd).
+        """
         n = len(team_ids)
         if n < 2:
             return {}
@@ -357,7 +400,18 @@ class TournamentService:
         while size < n:
             size *= 2
 
-        padded = team_ids + [None] * (size - n)
+        if seed_map:
+            # Sort teams by seed (unseeded / None last), then apply standard
+            # bracket seeding order so top seeds are on opposite sides.
+            seeded_teams = sorted(
+                [t for t in team_ids if t is not None],
+                key=lambda t: seed_map.get(t, 9999),
+            )
+            seed_ordered = seeded_teams + [None] * (size - len(seeded_teams))
+            positions = TournamentService._bracket_seed_positions(size)
+            padded = [seed_ordered[i] for i in positions]
+        else:
+            padded = team_ids + [None] * (size - n)
 
         round_names = []
         remaining = size

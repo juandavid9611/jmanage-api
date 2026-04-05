@@ -32,6 +32,10 @@ class CreateUser(BaseModel):
     accountId: str
 
 
+class PutTourPreferences(BaseModel):
+    tourKey: str
+
+
 class PutUser(BaseModel):
     id: str
     name: str

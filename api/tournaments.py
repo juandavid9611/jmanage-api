@@ -70,12 +70,8 @@ async def list_tournaments(
     status: str | None = None,
     account_id: str = Depends(get_account_id),
     svc: TournamentService = Depends(get_tournament_service),
-    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
 ):
-    tournaments = svc.list_tournaments(account_id, status=status)
-    for t in tournaments:
-        t["team_count"] = team_svc.count_teams(t["id"])
-    return tournaments
+    return svc.list_tournaments(account_id, status=status)
 
 
 @router.post("", dependencies=[Depends(ADMIN)])
@@ -520,14 +516,19 @@ async def generate_schedule(
                 total_matchweeks = max(total_matchweeks, result["matchweeks_generated"])
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+        if t.get("current_matchweek", 0) == 0 and total_matches > 0:
+            t_svc.update_tournament(tournament_id, account_id, PatchTournament(current_matchweek=1))
         return {"matches_created": total_matches, "matchweeks_generated": total_matchweeks}
 
     teams = team_svc.list_teams(tournament_id, group_id=body.group_id)
     team_ids = [tm["id"] for tm in teams]
     try:
-        return svc.generate_schedule(tournament_id, team_ids, body, legs=legs)
+        result = svc.generate_schedule(tournament_id, team_ids, body, legs=legs)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if t.get("current_matchweek", 0) == 0:
+        t_svc.update_tournament(tournament_id, account_id, PatchTournament(current_matchweek=1))
+    return result
 
 
 @router.post("/{tournament_id}/bracket:generate", dependencies=[Depends(ADMIN)])
@@ -601,9 +602,14 @@ async def tournament_standings(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
     t_svc: TournamentService = Depends(get_tournament_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     s_svc: StandingsService = Depends(get_standings_service),
 ):
     t = _require_tournament(t_svc, tournament_id, account_id)
+    groups = t.get("groups", [])
+    if groups:
+        teams = team_svc.list_teams(tournament_id)
+        return s_svc.get_all_standings(tournament_id, t.get("rules", {}), groups, teams)
     return s_svc.get_standings(tournament_id, t.get("rules", {}))
 
 
@@ -675,6 +681,7 @@ async def tournament_stats(
         tournament_id,
         current_matchweek=t.get("current_matchweek", 0),
         total_matchweeks=t.get("rules", {}).get("total_matchweeks"),
+        tournament=t,
     )
 
 

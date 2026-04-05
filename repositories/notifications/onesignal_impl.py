@@ -52,7 +52,7 @@ class OneSignalNotificationSender(InAppSender):
             "contents": {"en": content},
             "include_aliases": {"external_id": external_user_ids},
             "target_channel": "push",
-            "url": f"{self.base_action_url}/{action_url_path}",
+            "url": f"{self.base_action_url.rstrip('/')}/{action_url_path}",
         }
         if category:
             payload["data"] = {"category": category}

@@ -42,6 +42,10 @@ class TournamentMatchEventRepo:
             KeyConditionExpression=Key("match_id").eq(match_id),
         )
 
+    def batch_list_by_matches(self, match_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """Fetch events for multiple matches. Returns dict keyed by match_id."""
+        return {mid: self.list_by_match(mid) for mid in match_ids}
+
     def update(self, event_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
         if not updates:
             return self.get(event_id)
