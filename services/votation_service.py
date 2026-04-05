@@ -1,29 +1,45 @@
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from repositories.votation_repo_ddb import VotationRepo
 from repositories.tour_repo_ddb import TourRepo
 from services.notification_orchestator import Notifications
 
+BOGOTA_TZ = ZoneInfo("America/Bogota")  # UTC-5
+
 
 def _parse_start_date(available: Any) -> datetime | None:
-    """Parse startDate from the tour's 'available' dict (ms timestamp or ISO string)."""
+    """
+    Parse startDate from the tour's 'available' dict and return a
+    timezone-aware datetime in America/Bogota (UTC-5).
+
+    Training tours store startDate as a Unix epoch number (ms or s).
+    Match tours store startDate as an ISO-8601 string with offset (e.g. 2026-03-29T10:00:00-05:00).
+    """
     if not isinstance(available, dict):
         return None
     raw = available.get("startDate")
     if raw is None:
         return None
+
+    # --- Numeric epoch (training tours) ---
     try:
         ts = float(raw)
-        # Millisecond timestamps are > 1e10; convert to seconds
-        if ts > 1e10:
+        if ts > 1e10:          # milliseconds → seconds
             ts /= 1000
-        return datetime.fromtimestamp(ts)
+        return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(BOGOTA_TZ)
     except (TypeError, ValueError):
         pass
+
+    # --- ISO string (match tours) ---
     try:
-        return datetime.fromisoformat(str(raw))
+        dt = datetime.fromisoformat(str(raw))
+        if dt.tzinfo is not None:
+            return dt.astimezone(BOGOTA_TZ)
+        # Naive string (no offset) — treat as already in Bogota local time
+        return dt.replace(tzinfo=BOGOTA_TZ)
     except ValueError:
         return None
 
