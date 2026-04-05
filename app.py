@@ -30,15 +30,15 @@ def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title="SportsManagement API", version="7.0.0")
 
-    origins = [
-        "http://localhost",
-        "http://localhost:3031",
-        "http://localhost:3030"
-    ]
+    # origins = [
+    #     "http://localhost",
+    #     "http://localhost:3031",
+    #     "http://localhost:3030"
+    # ]
     
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"]
