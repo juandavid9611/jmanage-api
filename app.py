@@ -33,12 +33,14 @@ def create_app() -> FastAPI:
     origins = [
         "http://localhost",
         "http://localhost:3031",
-        "http://localhost:3030"
+        "http://localhost:3030",
+        "https://dev-jmanage-web.vercel.app",
+        "https://sportsmanage.app",
     ]
     
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"]
