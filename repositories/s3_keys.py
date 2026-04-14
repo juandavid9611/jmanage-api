@@ -64,3 +64,31 @@ class KeyBuilder:
         {env}/accounts/{account_id}/files/{file_id}/{filename}
         """
         return join(self.account_root(account_id), "files", _clean(file_id), _clean(filename))
+
+    def player_avatar(self, account_id: str, player_id: str, filename: str) -> str:
+        """
+        Full object key for a player avatar photo.
+        {env}/accounts/{account_id}/players/{player_id}/{filename}
+        """
+        return join(self.account_root(account_id), "players", _clean(player_id), _clean(filename))
+
+    def team_document(self, account_id: str, team_id: str, doc_type: str, filename: str) -> str:
+        """
+        Full object key for a team document.
+        {env}/accounts/{account_id}/teams/{team_id}/docs/{doc_type}/{filename}
+        """
+        return join(self.account_root(account_id), "teams", _clean(team_id), "docs", _clean(doc_type), _clean(filename))
+
+    def tournament_logo(self, account_id: str, tournament_id: str, filename: str) -> str:
+        """
+        Full object key for a tournament logo.
+        {env}/accounts/{account_id}/tournaments/{tournament_id}/{filename}
+        """
+        return join(self.account_root(account_id), "tournaments", _clean(tournament_id), _clean(filename))
+
+    def team_logo(self, account_id: str, team_id: str, filename: str) -> str:
+        """
+        Full object key for a team logo.
+        {env}/accounts/{account_id}/teams/{team_id}/logo/{filename}
+        """
+        return join(self.account_root(account_id), "teams", _clean(team_id), "logo", _clean(filename))

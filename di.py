@@ -126,18 +126,21 @@ def get_tournament_service() -> TournamentService:
     match_repo = TournamentMatchRepo()
     standings_svc = StandingsService(match_repo)
     team_repo = TournamentTeamRepo()
-    return TournamentService(repo, standings_service=standings_svc, team_repo=team_repo, match_repo=match_repo)
+    from repositories.s3_adapter import S3Adapter
+    return TournamentService(repo, standings_service=standings_svc, team_repo=team_repo, match_repo=match_repo, s3=S3Adapter())
 
 def get_tournament_team_service() -> TournamentTeamService:
     repo = TournamentTeamRepo()
     tournament_repo = TournamentRepo()
-    return TournamentTeamService(repo, tournament_repo=tournament_repo)
+    from repositories.s3_adapter import S3Adapter
+    return TournamentTeamService(repo, tournament_repo=tournament_repo, s3=S3Adapter(), notifications=get_notification_orchestator())
 
 def get_tournament_player_service() -> TournamentPlayerService:
     repo = TournamentPlayerRepo()
     match_repo = TournamentMatchRepo()
     event_repo = TournamentMatchEventRepo()
-    return TournamentPlayerService(repo, match_repo, event_repo)
+    from repositories.s3_adapter import S3Adapter
+    return TournamentPlayerService(repo, match_repo, event_repo, s3=S3Adapter())
 
 def get_match_service() -> TournamentMatchService:
     repo = TournamentMatchRepo()
@@ -146,7 +149,8 @@ def get_match_service() -> TournamentMatchService:
 
 def get_match_event_service() -> TournamentMatchEventService:
     repo = TournamentMatchEventRepo()
-    return TournamentMatchEventService(repo)
+    match_repo = TournamentMatchRepo()
+    return TournamentMatchEventService(repo, match_repo=match_repo)
 
 def get_standings_service() -> StandingsService:
     match_repo = TournamentMatchRepo()

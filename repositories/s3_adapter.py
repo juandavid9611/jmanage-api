@@ -116,6 +116,55 @@ class S3Adapter:
         key = self._kb.file(account_id, file_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
     
+    def presign_team_document_put(
+        self,
+        *,
+        account_id: str,
+        team_id: str,
+        doc_type: str,
+        filename: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> dict[str, str]:
+        key = self._kb.team_document(account_id, team_id, doc_type, filename)
+        return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+
+    def presign_tournament_logo_put(
+        self,
+        *,
+        account_id: str,
+        tournament_id: str,
+        filename: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> dict[str, str]:
+        key = self._kb.tournament_logo(account_id, tournament_id, filename)
+        return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+
+    def presign_team_logo_put(
+        self,
+        *,
+        account_id: str,
+        team_id: str,
+        filename: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> dict[str, str]:
+        key = self._kb.team_logo(account_id, team_id, filename)
+        return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+
+    def presign_player_avatar_put(
+        self,
+        *,
+        account_id: str,
+        player_id: str,
+        filename: str,
+        content_type: str,
+        expires_in: int = 3600,
+    ) -> dict[str, str]:
+        key = self._kb.player_avatar(account_id, player_id, filename)
+        return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+
     def delete_file(self, key: str) -> None:
         """Delete a file from S3"""
         self._s3.delete_object(Bucket=_bucket_name(), Key=key)

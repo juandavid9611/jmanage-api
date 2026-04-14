@@ -21,22 +21,30 @@ class StandingsService:
         group_id: str | None = None,
         group_team_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Compute standings from finished matches."""
+        """Compute standings from finished and live matches."""
         # When group_team_ids is provided, always filter by team membership —
         # matches may not have group_id set (e.g. generated without group context).
         if group_team_ids:
-            all_matches = self.match_repo.list_by_tournament(
+            finished = self.match_repo.list_by_tournament(
                 tournament_id, status="finished"
             )
+            live = self.match_repo.list_by_tournament(
+                tournament_id, status="live"
+            )
+            all_matches = finished + live
             team_set = set(group_team_ids)
             matches = [
                 m for m in all_matches
                 if m.get("home_team_id") in team_set and m.get("away_team_id") in team_set
             ]
         else:
-            matches = self.match_repo.list_by_tournament(
+            finished = self.match_repo.list_by_tournament(
                 tournament_id, status="finished", group_id=group_id
             )
+            live = self.match_repo.list_by_tournament(
+                tournament_id, status="live", group_id=group_id
+            )
+            matches = finished + live
 
         ppw = rules.get("points_per_win", 3)
         ppd = rules.get("points_per_draw", 1)
@@ -141,6 +149,8 @@ class StandingsService:
     ) -> dict[str, Any]:
         """Return standings for all groups + tournament level in one DB round trip."""
         finished = self.match_repo.list_by_tournament(tournament_id, status="finished")
+        live = self.match_repo.list_by_tournament(tournament_id, status="live")
+        finished = finished + live  # include live matches in standings
 
         # Build group membership lookup: group_id -> set of team_ids
         group_team_ids: dict[str, set[str]] = {}

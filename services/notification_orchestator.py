@@ -19,6 +19,7 @@ class Notifications:
     COURIER_TEMPLATE_PAYMENT_OVERDUE = "40AZX1PQRGM3D0QD0R3AZG1P6AAE"
     COURIER_TEMPLATE_USER_WELCOME = "H9MDTT27FTMKH7K3HCM1M4MDR23T"
     COURIER_TEMPLATE_CHRISTMAS_GREETING = "070Z3SZX8V4YAXMTAEWKCXW2NVEV"
+    COURIER_TEMPLATE_TEAM_REGISTERED = "PH45YYJWG8MGEBMG02E4CDZSV256"
 
     def __init__(self, email_sender: EmailSender, in_app_sender: InAppSender) -> None:
         self._email_sender = email_sender
@@ -240,6 +241,18 @@ class Notifications:
             action_url_path="dashboard/calendar"
         )
     
+    def team_registered(self, *, email: str, club_name: str, tournament_name: str) -> dict[str, str | Exception]:
+        results: dict[str, str | Exception] = {}
+        try:
+            results["email"] = self._send_email(
+                template_id=self.COURIER_TEMPLATE_TEAM_REGISTERED,
+                to_email=email,
+                data={"club_name": club_name, "tournament_name": tournament_name},
+            )
+        except Exception as e:
+            results["email"] = e
+        return results
+
     def votation_opened(self, *, user_emails: list[str], month: str) -> str:
         return self._send_bulk_in_app_notification(
             user_emails=user_emails,

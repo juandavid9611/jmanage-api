@@ -1,7 +1,7 @@
 
 ============================================================
 📊 Application Usage Report
-   Generated: 2026-04-04 05:49:31 UTC
+   Generated: 2026-04-06 16:41:22 UTC
    Period: March – April 2026
 ============================================================
 
@@ -10,7 +10,7 @@
 ────────────────────────────────────────────────────────────
 1️⃣  USERS CREATED IN MARCH–APRIL 2026
 ────────────────────────────────────────────────────────────
-   Total users in system: 127
+   Total users in system: 126
    Created in March–April: 3
 
    • Oscar Fabián  Cante Barbosa  (oscar.cante2319@gmail.com) — 2026-03-25
@@ -21,9 +21,9 @@
 2️⃣  USERS WITH CALENDAR EVENT PARTICIPATION
 ────────────────────────────────────────────────────────────
 📅 Loading calendar events...
-   Total calendar events:         73
-   Events with participants:      73
-   Unique users who participated: 84
+   Total calendar events:         75
+   Events with participants:      75
+   Unique users who participated: 85
 
    • Abdulh Daza (ID: 84e403f3-1bc9-48c7-97d1-404936464d58)
    • Adrian Villalba (ID: 3e8e8fd4-ffcf-4be7-9491-63388978d50d)
@@ -104,6 +104,7 @@
    • Valerie Llanos (ID: 57f4c72d-f879-48d3-9b3a-a7b0f04be7b0)
    • Veronica Paz (ID: 8394f489-07d3-41e7-ad9c-5301d3656b19)
    • Victor Cespedes (ID: 8a63bb91-5268-40f7-b940-b049a45207d5)
+   • Vivian Gómez (ID: 6eb6852e-2da1-4da5-9ae7-f409d7e6ab87)
    • William Cabrera  (ID: 41959332-3e10-46c9-845f-c55bd330f64b)
    • William Guillermo Rivera Báez (ID: f7ea474a-aac5-4dc1-8dc8-aa66d8813c31)
    • Ximena  Parra Cristancho  (ID: 4992f290-68de-4405-ac73-07c18dd4ce5d)
@@ -191,10 +192,10 @@
 ────────────────────────────────────────────────────────────
 4️⃣  UNION: USERS WITH EVENTS OR PAYMENT REQUESTS
 ────────────────────────────────────────────────────────────
-   Users with event participation only:   17
+   Users with event participation only:   18
    Users with payment requests only:      3
    Users with both:                       67
-   Total unique users (union):            87
+   Total unique users (union):            88
 
    • 0d98c583-e6bc-4dc2-bc8e-6435d1f1e6fb — events
    • Abdulh Daza — events, payments
@@ -279,6 +280,7 @@
    • Valerie Llanos — events, payments
    • Veronica Paz — events, payments
    • Victor Cespedes — events
+   • Vivian Gómez — events
    • William Cabrera  — events, payments
    • William Guillermo Rivera Báez — events, payments
    • Ximena  Parra Cristancho  — events, payments
@@ -287,10 +289,10 @@
 ============================================================
 📋 SUMMARY
 ============================================================
-   Total users:                        127
+   Total users:                        126
    New users (March–April):                3
-   Users with event participation:     84
+   Users with event participation:     85
    Users with payment requests:        70
-   Active users (events ∪ payments):   87
+   Active users (events ∪ payments):   88
 ============================================================
 
