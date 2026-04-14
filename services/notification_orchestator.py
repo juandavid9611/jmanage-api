@@ -259,7 +259,7 @@ class Notifications:
             title="¡Vota por el jugador del mes!",
             content=f"La votación de {month} está abierta. Entra y vota por tu favorito.",
             category="votation_opened",
-            action_url_path="dashboard/attendance",
+            action_url_path="dashboard/votaciones",
         )
 
     def _get_formatted_notification_field(self, field):

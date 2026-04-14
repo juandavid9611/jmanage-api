@@ -30,15 +30,15 @@ def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title="SportsManagement API", version="7.0.0")
 
-    # origins = [
-    #     "http://localhost",
-    #     "http://localhost:3031",
-    #     "http://localhost:3030"
-    # ]
+    origins = [
+        "http://localhost",
+        "http://localhost:3031",
+        "http://localhost:3030"
+    ]
     
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"]
@@ -78,6 +78,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8085,
         reload=True,
-        # log_config=None,     # 🔹 Desactiva el logger por defecto de Uvicorn
+        log_config=None,     # 🔹 Desactiva el logger por defecto de Uvicorn
         access_log=False,    # 🔹 Evita logs duplicados
     )
