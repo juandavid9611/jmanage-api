@@ -106,7 +106,7 @@ class VotationService:
                     player_map[pid] = {
                         "id": pid,
                         "name": booker.get("name", ""),
-                        "avatar_url": booker.get("avatar_url"),
+                        "avatar_url": booker.get("avatarUrl") or booker.get("avatar_url"),
                         "attended": 0,
                         "match_attended": 0,
                         "goals": 0,
