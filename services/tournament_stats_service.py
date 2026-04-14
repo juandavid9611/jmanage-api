@@ -37,16 +37,18 @@ class TournamentStatsService:
 
         total_matches = len(all_matches)
         finished = [m for m in all_matches if m.get("status") == "finished"]
+        live = [m for m in all_matches if m.get("status") == "live"]
+        counted = finished + live  # include live matches in stats
         matches_played = len(finished)
         matches_remaining = total_matches - matches_played
 
-        # Compute goals and cards from events (batch: 1 query per finished match)
+        # Compute goals and cards from events (batch: 1 query per counted match)
         total_goals = 0
         total_yellow_cards = 0
         total_red_cards = 0
 
         goal_types = {"goal", "own_goal", "penalty_scored"}
-        events_by_match = self.event_repo.batch_list_by_matches([m["id"] for m in finished])
+        events_by_match = self.event_repo.batch_list_by_matches([m["id"] for m in counted])
 
         for events in events_by_match.values():
             for ev in events:

@@ -43,6 +43,12 @@ from api.schemas.tournaments import (
     PatchTeam,
     CreatePlayer,
     PatchPlayer,
+    PlayerAvatarRequest,
+    TeamLogoRequest,
+    TeamDocumentUploadRequest,
+    TeamDocumentConfirmRequest,
+    TeamDocumentDeleteRequest,
+    TournamentLogoRequest,
     CreateMatch,
     PatchMatch,
     CreateMatchEvent,
@@ -117,6 +123,19 @@ async def delete_tournament(
     if not svc.delete_tournament(tournament_id, account_id):
         raise HTTPException(status_code=404, detail="Tournament not found")
     return {"deleted": tournament_id}
+
+
+@router.post("/{tournament_id}/logo-url", dependencies=[Depends(ADMIN)])
+async def get_tournament_logo_upload_url(
+    tournament_id: str,
+    body: TournamentLogoRequest,
+    account_id: str = Depends(get_account_id),
+    svc: TournamentService = Depends(get_tournament_service),
+):
+    t = svc.get_tournament(tournament_id, account_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    return svc.generate_logo_upload_url(tournament_id, account_id, body.filename, body.content_type)
 
 
 # ╔══════════════════════════════════════════════════════════════════════╗
@@ -297,6 +316,76 @@ async def delete_team(
     return {"deleted": team_id}
 
 
+@router.post("/{tournament_id}/teams/{team_id}/logo-url", dependencies=[Depends(ADMIN)])
+async def get_team_logo_upload_url(
+    tournament_id: str,
+    team_id: str,
+    body: TeamLogoRequest,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentTeamService = Depends(get_tournament_team_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    existing = svc.get_team(team_id)
+    if not existing or existing.get("tournament_id") != tournament_id:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return svc.generate_logo_upload_url(team_id, account_id, body.filename, body.content_type)
+
+
+@router.post("/{tournament_id}/teams/{team_id}/documents/upload-url", dependencies=[Depends(ADMIN)])
+async def get_team_document_upload_url(
+    tournament_id: str,
+    team_id: str,
+    body: TeamDocumentUploadRequest,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentTeamService = Depends(get_tournament_team_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    existing = svc.get_team(team_id)
+    if not existing or existing.get("tournament_id") != tournament_id:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return svc.generate_document_upload_url(team_id, account_id, body.doc_type, body.filename, body.content_type)
+
+
+@router.post("/{tournament_id}/teams/{team_id}/documents", dependencies=[Depends(ADMIN)])
+async def confirm_team_document(
+    tournament_id: str,
+    team_id: str,
+    body: TeamDocumentConfirmRequest,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentTeamService = Depends(get_tournament_team_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    existing = svc.get_team(team_id)
+    if not existing or existing.get("tournament_id") != tournament_id:
+        raise HTTPException(status_code=404, detail="Team not found")
+    updated = svc.add_document(team_id, body.doc_type, body.name, body.key)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return updated
+
+
+@router.delete("/{tournament_id}/teams/{team_id}/documents", dependencies=[Depends(ADMIN)])
+async def delete_team_document(
+    tournament_id: str,
+    team_id: str,
+    body: TeamDocumentDeleteRequest,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentTeamService = Depends(get_tournament_team_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    existing = svc.get_team(team_id)
+    if not existing or existing.get("tournament_id") != tournament_id:
+        raise HTTPException(status_code=404, detail="Team not found")
+    updated = svc.remove_document(team_id, body.doc_type, body.key)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return updated
+
+
 # ╔══════════════════════════════════════════════════════════════════════╗
 # ║  4. PLAYERS                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
@@ -359,6 +448,22 @@ async def update_player(
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
     return svc.update_player(player_id, body)
+
+
+@router.post("/{tournament_id}/players/{player_id}/avatar-url", dependencies=[Depends(ADMIN)])
+async def get_player_avatar_upload_url(
+    tournament_id: str,
+    player_id: str,
+    body: PlayerAvatarRequest,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    svc: TournamentPlayerService = Depends(get_tournament_player_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    existing = svc.get_player(player_id)
+    if not existing or existing.get("tournament_id") != tournament_id:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return svc.generate_avatar_upload_url(player_id, account_id, body.filename, body.content_type)
 
 
 @router.delete("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN)])
@@ -516,8 +621,16 @@ async def generate_schedule(
                 total_matchweeks = max(total_matchweeks, result["matchweeks_generated"])
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
-        if t.get("current_matchweek", 0) == 0 and total_matches > 0:
-            t_svc.update_tournament(tournament_id, account_id, PatchTournament(current_matchweek=1))
+        if total_matches > 0:
+            rules_val = t.get("rules", {})
+            rules_val["total_matchweeks"] = total_matchweeks
+            
+            patch_data = {"rules": rules_val}
+            if t.get("current_matchweek", 0) == 0:
+                patch_data["current_matchweek"] = 1
+                
+            t_svc.update_tournament(tournament_id, account_id, PatchTournament(**patch_data))
+            
         return {"matches_created": total_matches, "matchweeks_generated": total_matchweeks}
 
     teams = team_svc.list_teams(tournament_id, group_id=body.group_id)
@@ -526,8 +639,15 @@ async def generate_schedule(
         result = svc.generate_schedule(tournament_id, team_ids, body, legs=legs)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    rules_val = t.get("rules", {})
+    rules_val["total_matchweeks"] = result["matchweeks_generated"]
+    
+    patch_data = {"rules": rules_val}
     if t.get("current_matchweek", 0) == 0:
-        t_svc.update_tournament(tournament_id, account_id, PatchTournament(current_matchweek=1))
+        patch_data["current_matchweek"] = 1
+        
+    t_svc.update_tournament(tournament_id, account_id, PatchTournament(**patch_data))
+    
     return result
 
 

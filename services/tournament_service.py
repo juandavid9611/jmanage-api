@@ -13,6 +13,7 @@ from api.schemas.tournaments import (
     GenerateBracketRequest,
     BracketOverride,
 )
+from repositories.s3_adapter import S3Adapter
 from repositories.tournament_repo_ddb import TournamentRepo
 from repositories.tournament_team_repo_ddb import TournamentTeamRepo
 from repositories.tournament_match_repo_ddb import TournamentMatchRepo
@@ -32,11 +33,38 @@ class TournamentService:
         standings_service=None,
         team_repo: TournamentTeamRepo | None = None,
         match_repo: TournamentMatchRepo | None = None,
+        s3: S3Adapter | None = None,
     ):
         self.repo = repo
         self.standings_service = standings_service
         self.team_repo = team_repo
         self.match_repo = match_repo
+        self.s3 = s3
+
+    # ── Tournament CRUD ──────────────────────────────────────────────
+
+    # ── Logo upload ──────────────────────────────────────────────────
+
+    def generate_logo_upload_url(
+        self, tournament_id: str, account_id: str, filename: str, content_type: str
+    ) -> dict[str, str]:
+        if not self.s3:
+            raise ValueError("S3 adapter not configured")
+        return self.s3.presign_tournament_logo_put(
+            account_id=account_id,
+            tournament_id=tournament_id,
+            filename=filename,
+            content_type=content_type,
+        )
+
+    def _resolve_logo(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Convert stored S3 key to presigned GET URL in-place."""
+        key = item.get("logo_url")
+        if key and self.s3 and not key.startswith("http"):
+            item["logo_url"] = self.s3.presign_get_from_explicit_key(
+                key=key, content_type="image/jpeg"
+            )
+        return item
 
     # ── Tournament CRUD ──────────────────────────────────────────────
 
@@ -54,21 +82,31 @@ class TournamentService:
             "rules": rules,
             "groups": [],
             "bracket": {},
+            "sport": body.sport or "",
+            "teams_per_group": body.teams_per_group,
+            "num_teams": body.num_teams,
+            "tiebreaker_order": body.tiebreaker_order or [],
+            "options": body.options or {},
+            "description": body.description or "",
+            "logo_url": body.logo_url or "",
+            "start_date": body.start_date or "",
+            "end_date": body.end_date or "",
+            "location": body.location or "",
             "created_at": datetime.utcnow().isoformat(),
         }
         self.repo.put(item)
-        return item
+        return self._resolve_logo(item)
 
     def get_tournament(self, tournament_id: str, account_id: str) -> dict[str, Any] | None:
         item = self.repo.get(tournament_id)
         if item and item.get("account_id") == account_id:
-            return item
+            return self._resolve_logo(item)
         return None
 
     def get_public_tournament(self, tournament_id: str) -> dict[str, Any] | None:
         item = self.repo.get(tournament_id)
         if item and item.get("is_public"):
-            return item
+            return self._resolve_logo(item)
         return None
 
     def list_public_tournaments(self, status: str | None = None) -> dict[str, Any]:
@@ -78,7 +116,7 @@ class TournamentService:
             s = item.get("status", "")
             counts[s] = counts.get(s, 0) + 1
         items = [i for i in all_items if i.get("status") == status] if status else all_items
-        return {"items": items, "counts_by_status": counts}
+        return {"items": [self._resolve_logo(i) for i in items], "counts_by_status": counts}
 
     def list_tournaments(self, account_id: str, status: str | None = None) -> dict[str, Any]:
         all_items = self.repo.list_by_account(account_id)
@@ -87,7 +125,7 @@ class TournamentService:
             s = item.get("status", "")
             counts[s] = counts.get(s, 0) + 1
         items = [i for i in all_items if i.get("status") == status] if status else all_items
-        return {"items": items, "counts_by_status": counts}
+        return {"items": [self._resolve_logo(i) for i in items], "counts_by_status": counts}
 
     def update_tournament(self, tournament_id: str, account_id: str, body: PatchTournament) -> dict[str, Any] | None:
         existing = self.get_tournament(tournament_id, account_id)
@@ -101,7 +139,8 @@ class TournamentService:
             updates["status"] = updates["status"]  # already a string via .value in Pydantic
         if not updates:
             return existing
-        return self.repo.update(tournament_id, updates)
+        updated = self.repo.update(tournament_id, updates)
+        return self._resolve_logo(updated) if updated else None
 
     def delete_tournament(self, tournament_id: str, account_id: str) -> bool:
         existing = self.get_tournament(tournament_id, account_id)

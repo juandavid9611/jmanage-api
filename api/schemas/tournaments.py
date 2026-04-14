@@ -69,6 +69,16 @@ class CreateTournament(BaseModel):
     type: TournamentType
     rules: TournamentRules | None = None
     is_public: bool = False
+    sport: str | None = None
+    teams_per_group: int | None = None
+    num_teams: int | None = None
+    tiebreaker_order: list[str] | None = None
+    options: dict | None = None
+    description: str | None = None
+    logo_url: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    location: str | None = None
 
 
 class PatchTournament(BaseModel):
@@ -77,6 +87,21 @@ class PatchTournament(BaseModel):
     current_matchweek: int | None = None
     rules: TournamentRules | None = None
     is_public: bool | None = None
+    sport: str | None = None
+    teams_per_group: int | None = None
+    num_teams: int | None = None
+    tiebreaker_order: list[str] | None = None
+    options: dict | None = None
+    description: str | None = None
+    logo_url: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    location: str | None = None
+
+
+class TournamentLogoRequest(BaseModel):
+    filename: str
+    content_type: str
 
 
 # ── Groups ───────────────────────────────────────────────────────────────
@@ -100,10 +125,14 @@ class AssignTeamToGroup(BaseModel):
 
 class CreateTeam(BaseModel):
     name: str
-    short_name: str = Field(..., max_length=3)
+    short_name: str | None = Field(None, max_length=3)
     logo_url: str | None = None
     seed: int | None = None
     group_id: str | None = None
+    manager_name: str | None = None
+    contact_email: str | None = None
+    primary_color: str | None = None
+    rules_accepted: bool = False
 
 
 class PatchTeam(BaseModel):
@@ -111,6 +140,10 @@ class PatchTeam(BaseModel):
     short_name: str | None = Field(None, max_length=3)
     logo_url: str | None = None
     seed: int | None = None
+    manager_name: str | None = None
+    contact_email: str | None = None
+    primary_color: str | None = None
+    rules_accepted: bool | None = None
 
 
 # ── Players ──────────────────────────────────────────────────────────────
@@ -119,6 +152,7 @@ class CreatePlayer(BaseModel):
     name: str
     position: PlayerPosition
     number: int
+    id_number: str | None = None
     avatar_url: str | None = None
 
 
@@ -126,7 +160,37 @@ class PatchPlayer(BaseModel):
     name: str | None = None
     position: PlayerPosition | None = None
     number: int | None = None
+    id_number: str | None = None
     avatar_url: str | None = None
+
+
+class PlayerAvatarRequest(BaseModel):
+    filename: str
+    content_type: str
+
+
+class TeamLogoRequest(BaseModel):
+    filename: str
+    content_type: str
+
+
+# ── Team Documents ────────────────────────────────────────────────────────
+
+class TeamDocumentUploadRequest(BaseModel):
+    doc_type: str
+    filename: str
+    content_type: str
+
+
+class TeamDocumentConfirmRequest(BaseModel):
+    doc_type: str
+    name: str
+    key: str
+
+
+class TeamDocumentDeleteRequest(BaseModel):
+    doc_type: str
+    key: str
 
 
 # ── Matches ──────────────────────────────────────────────────────────────
@@ -139,6 +203,7 @@ class CreateMatch(BaseModel):
     matchweek: int | None = None
     round: str | None = None
     group_id: str | None = None
+    notes: str | None = None
 
 
 class PatchMatch(BaseModel):
@@ -147,6 +212,7 @@ class PatchMatch(BaseModel):
     status: MatchStatus | None = None
     score_home: int | None = None
     score_away: int | None = None
+    notes: str | None = None
 
 
 # ── Match Events ─────────────────────────────────────────────────────────

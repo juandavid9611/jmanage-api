@@ -46,8 +46,8 @@ class TournamentMatchService:
             "round": body.round or "",
             "group_id": body.group_id or "",
             "status": "scheduled",
-            "score_home": -1,
-            "score_away": -1,
+            "score_home": 0,
+            "score_away": 0,
             "created_at": datetime.utcnow().isoformat(),
         }
         self.repo.put(item)
@@ -96,8 +96,8 @@ class TournamentMatchService:
                     f"Allowed: {allowed}"
                 )
 
-            # Auto-compute score from events when finishing
-            if new_status == "finished" and self.event_repo:
+            # Auto-compute score from events when transitioning to live or finishing
+            if new_status in ("live", "finished") and self.event_repo:
                 score_home, score_away = self._compute_score(
                     match_id,
                     existing.get("home_team_id"),
@@ -210,8 +210,8 @@ class TournamentMatchService:
                         "round": "",
                         "group_id": body.group_id or "",
                         "status": "scheduled",
-                        "score_home": -1,
-                        "score_away": -1,
+                        "score_home": 0,
+                        "score_away": 0,
                         "created_at": datetime.utcnow().isoformat(),
                     }
                     matches_to_create.append(match)
@@ -245,8 +245,8 @@ class TournamentMatchService:
                     "round": m.round or "",
                     "group_id": m.group_id or "",
                     "status": "scheduled",
-                    "score_home": -1,
-                    "score_away": -1,
+                    "score_home": 0,
+                    "score_away": 0,
                     "created_at": datetime.utcnow().isoformat(),
                 }
                 created.append(item)

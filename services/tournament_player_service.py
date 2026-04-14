@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from api.schemas.tournaments import CreatePlayer, PatchPlayer
+from repositories.s3_adapter import S3Adapter
 from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
 from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
 from repositories.tournament_match_repo_ddb import TournamentMatchRepo
@@ -20,10 +21,12 @@ class TournamentPlayerService:
         repo: TournamentPlayerRepo,
         match_repo: TournamentMatchRepo,
         event_repo: TournamentMatchEventRepo,
+        s3: S3Adapter | None = None,
     ):
         self.repo = repo
         self.match_repo = match_repo
         self.event_repo = event_repo
+        self.s3 = s3
 
     def create_player(self, tournament_id: str, team_id: str, body: CreatePlayer) -> dict[str, Any]:
         item = {
@@ -33,6 +36,7 @@ class TournamentPlayerService:
             "name": body.name,
             "position": body.position.value,
             "number": body.number,
+            "id_number": body.id_number or "",
             "avatar_url": body.avatar_url or "",
             "created_at": datetime.utcnow().isoformat(),
         }
@@ -81,6 +85,18 @@ class TournamentPlayerService:
         self.repo.delete(player_id)
         return True
 
+    def generate_avatar_upload_url(
+        self, player_id: str, account_id: str, filename: str, content_type: str
+    ) -> dict[str, str]:
+        if not self.s3:
+            raise ValueError("S3 adapter not configured")
+        return self.s3.presign_player_avatar_put(
+            account_id=account_id,
+            player_id=player_id,
+            filename=filename,
+            content_type=content_type,
+        )
+
     # ── Computed stats ───────────────────────────────────────────────
 
     def _with_batch_stats(self, tournament_id: str, players: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -97,6 +113,7 @@ class TournamentPlayerService:
         events_by_match = self.event_repo.batch_list_by_matches([m["id"] for m in finished])
 
         for player in players:
+            self._resolve_avatar(player)
             player_id = player["id"]
             team_id = player.get("team_id")
             goals = assists = yellow_cards = red_cards = appearances = 0
@@ -134,6 +151,14 @@ class TournamentPlayerService:
         """Attach computed stats for a single player (used by get/create/update)."""
         result = self._with_batch_stats(player.get("tournament_id", ""), [player])
         return result[0]
+
+    def _resolve_avatar(self, player: dict[str, Any]) -> None:
+        """Convert stored S3 key to a presigned GET URL in-place."""
+        key = player.get("avatar_url")
+        if key and self.s3 and not key.startswith("http"):
+            player["avatar_url"] = self.s3.presign_get_from_explicit_key(
+                key=key, content_type="image/jpeg"
+            )
 
     @staticmethod
     def _empty_stats() -> dict:
