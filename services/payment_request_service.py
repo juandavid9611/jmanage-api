@@ -1,19 +1,36 @@
 from time import time
 from uuid import uuid4
 from typing import Any
-from datetime import datetime
+from datetime import datetime, timezone
 from api.schemas.files import FileSpec
 from repositories.s3_adapter import S3Adapter
+from repositories.order_repo_ddb import OrderRepo
 from services.notification_orchestator import Notifications
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
 from api.schemas.payments import PaymentRequestStatus, BulkPutPaymentRequest
 
 
+PR_STATUS_TO_ORDER_EVENT = {
+    PaymentRequestStatus.PAID.value: ("payment_paid", "Pago confirmado"),
+    PaymentRequestStatus.APPROVAL_PENDING.value: ("payment_approval_pending", "Aprobando pago"),
+    PaymentRequestStatus.OVERDUE.value: ("payment_overdue", "Pago vencido"),
+    PaymentRequestStatus.CANCELED.value: ("payment_canceled", "Pago cancelado"),
+    PaymentRequestStatus.PENDING.value: ("payment_pending", "Pago pendiente"),
+}
+
+
 class PaymentRequestService:
-    def __init__(self, repo: PaymentRequestsRepo, s3: S3Adapter, notifier: Notifications):
+    def __init__(
+        self,
+        repo: PaymentRequestsRepo,
+        s3: S3Adapter,
+        notifier: Notifications,
+        order_repo: OrderRepo,
+    ):
         self.repo = repo
         self.notifier = notifier
         self.s3 = s3
+        self.order_repo = order_repo
         #TODO Important! Fix mapping userPrice, user_price, totalAmount
         #TODO Switch to excluded and custom mapping like in TourService
         self._updateable_fields = {
@@ -74,11 +91,13 @@ class PaymentRequestService:
         notification_fields_changed = self._get_notification_fields_changed(existing, new_item)
         if notification_fields_changed:
             self.notifier.payment_updated(
-                email=user["email"], 
-                user_name=user["name"], 
-                concept=new_item['concept'], 
+                email=user["email"],
+                user_name=user["name"],
+                concept=new_item['concept'],
                 changes=notification_fields_changed
             )
+        if existing.get("status") != new_item.get("status"):
+            self._append_order_event_for_status(new_item, account_id)
         return new_item
 
     def delete(self, payment_request_id: str, account_id: str) -> None:
@@ -101,9 +120,9 @@ class PaymentRequestService:
 
             result = self.s3.presign_invoice_put(
                 account_id=account_id,
-                user_id=user_id, 
-                payment_request_id=payment_request_id, 
-                filename=file_name, 
+                user_id=user_id,
+                payment_request_id=payment_request_id,
+                filename=file_name,
                 content_type=file_content_type
             )
             presigned_urls[file_name] = result["url"]
@@ -118,14 +137,14 @@ class PaymentRequestService:
             key = self.s3._kb.invoice_file(account_id, existing["userId"], payment_request_id, file_name)
             images.append(key)
         self.repo.update(
-            payment_request_id, 
+            payment_request_id,
             account_id,
             {
                 "payment_status": PaymentRequestStatus.APPROVAL_PENDING,
                 "images": images
             }
         )
-        
+
         new_item = self.get(payment_request_id, account_id)
         if not new_item:
             raise ValueError(f"Payment Request {payment_request_id} not found after update.")
@@ -134,12 +153,14 @@ class PaymentRequestService:
 
         if notification_fields_changed:
             self.notifier.payment_updated(
-                email=user["email"], 
-                user_name=user["name"], 
-                concept=new_item['concept'], 
+                email=user["email"],
+                user_name=user["name"],
+                concept=new_item['concept'],
                 changes=notification_fields_changed,
                 notify_admins=True
             )
+        if existing.get("status") != new_item.get("status"):
+            self._append_order_event_for_status(new_item, account_id)
         return payment_request_id
 
     def process_overdue_payments(self) -> list[dict[str, Any]]:
@@ -163,8 +184,15 @@ class PaymentRequestService:
                             "user_price": new_price
                         }
                     )
+                    order_id = item.get("order_id")
+                    if order_id:
+                        self._append_order_event(
+                            order_id,
+                            account_id,
+                            PaymentRequestStatus.OVERDUE.value,
+                        )
                     account_overdue_payments.append({
-                        "id": item["id"], 
+                        "id": item["id"],
                         "concept": item["concept"],
                         "user_price": new_price,
                         "to_name": item["payment_request_to"]["name"],
@@ -179,6 +207,28 @@ class PaymentRequestService:
             )
         return overdue_payments
 
+    def _append_order_event_for_status(self, pr_item: dict[str, Any], account_id: str) -> None:
+        order_id = pr_item.get("orderId")
+        if not order_id:
+            return
+        self._append_order_event(order_id, account_id, pr_item.get("status"))
+
+    def _append_order_event(self, order_id: str, account_id: str, pr_status: str) -> None:
+        status = pr_status.value if hasattr(pr_status, "value") else pr_status
+        mapping = PR_STATUS_TO_ORDER_EVENT.get(status)
+        if not mapping:
+            return
+        event_type, title = mapping
+        event = {
+            "type": event_type,
+            "title": title,
+            "time": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            self.order_repo.append_event(order_id, account_id, event)
+        except Exception as e:
+            print(f"[pr] failed to append order event {event_type} to order {order_id}: {e}")
+
     def _map_payment_request(self, item: dict[str, Any], get_presigned_url=True) -> dict[str, Any]:
         item["createDate"] = item.pop("create_date", None)
         item["dueDate"] = item.pop("due_date", None)
@@ -189,6 +239,7 @@ class PaymentRequestService:
         item["group"] = item.pop("user_group", None)
         item["userId"] = item.pop("user_id", None)
         item["createdTime"] = item.pop("created_time", None)
+        item["orderId"] = item.pop("order_id", None)
         if get_presigned_url:
             item["images"] = [self.s3.presign_get_from_explicit_key(key=image, content_type='image/png') for image in item.get("images", [])]
         return item
@@ -200,7 +251,7 @@ class PaymentRequestService:
             if value is not None:
                 updates[self._mapped_field_name(field)] = value
         return updates
-    
+
     def _mapped_field_name(self, field: str) -> str:
         mapping = {
             "createDate": "create_date",
@@ -225,7 +276,7 @@ class PaymentRequestService:
     def _get_new_payment_request(self, bulk_item: BulkPutPaymentRequest, user: dict[str, Any], created_time: int, account_id: str) -> dict[str, Any]:
         # TODO Clean user dict from unneeded attributes
         user.pop("user_metrics", None)
-        return {
+        new_item = {
             "id": f"{uuid4().hex}",
             "account_id": account_id,
             "create_date": bulk_item.createDate,
@@ -241,3 +292,6 @@ class PaymentRequestService:
             "payment_status": PaymentRequestStatus.PENDING,
             "created_time": created_time,
         }
+        if bulk_item.orderId:
+            new_item["order_id"] = bulk_item.orderId
+        return new_item
