@@ -58,9 +58,12 @@ def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
     )
 
 def get_payment_request_service() -> PaymentRequestService:
-    repo = PaymentRequestsRepo()
-    s3 = S3Adapter()
-    return PaymentRequestService(repo, s3, get_notification_orchestator())
+    return PaymentRequestService(
+        PaymentRequestsRepo(),
+        S3Adapter(),
+        get_notification_orchestator(),
+        order_repo=OrderRepo(),
+    )
 
 def get_calendar_service() -> CalendarService:
     repo = CalendarRepo()
@@ -103,8 +106,11 @@ def get_product_service() -> ProductService:
     return ProductService(repo, s3)
 
 def get_order_service() -> OrderService:
-    repo = OrderRepo()
-    return OrderService(repo)
+    return OrderService(
+        OrderRepo(),
+        get_payment_request_service(),
+        get_notification_orchestator(),
+    )
 
 def get_membership_service() -> MembershipService:
     repo = MembershipRepo()

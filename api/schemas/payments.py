@@ -22,3 +22,4 @@ class BulkPutPaymentRequest(BaseModel):
     isVerified: bool | None = None
     userPrice: int
     overduePrice: int | None = None
+    orderId: str | None = None

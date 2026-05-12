@@ -1,82 +1,97 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+from core.casing import camel_alias
 
-class OrderItem(BaseModel):
+
+class CamelModel(BaseModel):
+    model_config = {
+        "alias_generator": camel_alias,
+        "populate_by_name": True,
+        "from_attributes": True,
+    }
+
+
+class OrderItem(CamelModel):
     id: str
     sku: str
     quantity: int
     name: str
-    coverUrl: str
+    cover_url: str
     price: float
     available: int
     colors: List[str]
     size: str
 
-class TimelineItem(BaseModel):
+
+class OrderEvent(CamelModel):
+    type: str
     title: str
     time: datetime
+    meta: Optional[dict] = None
 
-class OrderHistory(BaseModel):
-    orderTime: datetime
-    paymentTime: Optional[datetime] = None
-    deliveryTime: Optional[datetime] = None
-    completionTime: Optional[datetime] = None
-    timeline: List[TimelineItem]
 
-class Customer(BaseModel):
+class Customer(CamelModel):
     id: str
     name: str
     email: str
-    phoneNumber: str
-    avatarUrl: Optional[str] = None
-    ipAddress: Optional[str] = None
+    phone_number: str
+    avatar_url: Optional[str] = None
+    ip_address: Optional[str] = None
 
-class Delivery(BaseModel):
+
+class Delivery(CamelModel):
     shipment_amount: int
     delivery_type: str
 
-class ShippingAddress(BaseModel):
-    fullAddress: str
-    addressType: str
+
+class ShippingAddress(CamelModel):
+    full_address: str
+    address_type: str
     company: str
 
-class Payment(BaseModel):
-    payment: str
-    cardType: str
-    cardNumber: str
 
-class Order(BaseModel):
+class Payment(CamelModel):
+    payment: str
+    card_type: Optional[str] = None
+    card_number: Optional[str] = None
+
+
+class Order(CamelModel):
     id: str
-    orderNumber: str
-    createdAt: datetime
-    taxes: float
-    items: List[OrderItem]
-    history: OrderHistory
+    order_number: str
+    created_at: datetime
+    workspace_id: Optional[str] = None
+    taxes: float = 0.0
+    items: List[OrderItem] = []
+    history: List[OrderEvent] = []
     subtotal: float
     shipping: float
     discount: float
     customer: Customer
     delivery: Delivery
-    totalAmount: float
-    totalQuantity: int
-    shippingAddress: ShippingAddress
+    total_amount: float
+    total_quantity: int
+    shipping_address: ShippingAddress
     payment: Payment
     status: str
+    payment_request_id: Optional[str] = None
 
-class OrderCreate(BaseModel):
+
+class OrderCreate(CamelModel):
+    workspace_id: str
     items: List[OrderItem]
     subtotal: float
     shipping: float
     discount: float
     customer: Customer
     delivery: Delivery
-    totalAmount: float
-    totalQuantity: int
-    shippingAddress: ShippingAddress
+    total_amount: float
+    total_quantity: int
+    shipping_address: ShippingAddress
     payment: Payment
 
-class OrderUpdate(BaseModel):
+
+class OrderUpdate(CamelModel):
     status: Optional[str] = None
     delivery: Optional[Delivery] = None
-

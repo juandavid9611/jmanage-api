@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List
+from typing import List, Optional
 from api.schemas.orders import Order, OrderCreate, OrderUpdate
 from services.order_service import OrderService
 from di import get_order_service
@@ -9,10 +9,11 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 @router.get("", response_model=List[Order], dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
 async def list_orders(
+    workspace_id: Optional[str] = None,
     account_id: str = Depends(get_account_id),
-    svc: OrderService = Depends(get_order_service)
+    svc: OrderService = Depends(get_order_service),
 ):
-    return svc.list_orders(account_id)
+    return svc.list_orders(account_id, workspace_id=workspace_id)
 
 @router.get("/{order_id}", response_model=Order, dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
 async def get_order(

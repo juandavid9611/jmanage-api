@@ -20,6 +20,8 @@ class Notifications:
     COURIER_TEMPLATE_USER_WELCOME = "H9MDTT27FTMKH7K3HCM1M4MDR23T"
     COURIER_TEMPLATE_CHRISTMAS_GREETING = "070Z3SZX8V4YAXMTAEWKCXW2NVEV"
     COURIER_TEMPLATE_TEAM_REGISTERED = "PH45YYJWG8MGEBMG02E4CDZSV256"
+    COURIER_TEMPLATE_ORDER_CREATED: str | None = None
+    COURIER_TEMPLATE_ORDER_STATUS_CHANGED: str | None = None
 
     def __init__(self, email_sender: EmailSender, in_app_sender: InAppSender) -> None:
         self._email_sender = email_sender
@@ -224,6 +226,82 @@ class Notifications:
             results["slack_summary"] = "sent"
         except Exception as e:
             results["slack_summary"] = e
+        return results
+
+    def order_created(
+        self,
+        *,
+        email: str,
+        user_name: str,
+        order_number: str,
+        total_amount: float,
+    ) -> dict[str, str | Exception]:
+        results: dict[str, str | Exception] = {}
+        if self.COURIER_TEMPLATE_ORDER_CREATED:
+            try:
+                results["email"] = self._send_email(
+                    template_id=self.COURIER_TEMPLATE_ORDER_CREATED,
+                    to_email=email,
+                    data={
+                        "userName": user_name,
+                        "orderNumber": order_number,
+                        "totalAmount": total_amount,
+                    },
+                )
+            except Exception as e:
+                results["email"] = e
+        try:
+            results["in_app"] = self._send_in_app_notification(
+                user_email=email,
+                title="Orden creada",
+                content=f"Se ha creado tu orden {order_number} por ${total_amount:,.0f}.",
+                category="order_created",
+                action_url_path="dashboard/order",
+            )
+        except Exception as e:
+            results["in_app"] = e
+        return results
+
+    def order_status_changed(
+        self,
+        *,
+        email: str,
+        user_name: str,
+        order_number: str,
+        status: str,
+    ) -> dict[str, str | Exception]:
+        results: dict[str, str | Exception] = {}
+        status_es = {
+            "pending": "Pendiente",
+            "completed": "Completada",
+            "cancelled": "Cancelada",
+            "refunded": "Reembolsada",
+            "paid": "Pagada",
+            "processing": "En proceso",
+        }.get(status, status)
+        if self.COURIER_TEMPLATE_ORDER_STATUS_CHANGED:
+            try:
+                results["email"] = self._send_email(
+                    template_id=self.COURIER_TEMPLATE_ORDER_STATUS_CHANGED,
+                    to_email=email,
+                    data={
+                        "userName": user_name,
+                        "orderNumber": order_number,
+                        "status": status_es,
+                    },
+                )
+            except Exception as e:
+                results["email"] = e
+        try:
+            results["in_app"] = self._send_in_app_notification(
+                user_email=email,
+                title="Actualización de orden",
+                content=f"Tu orden {order_number} ahora está: {status_es}.",
+                category="order_status_changed",
+                action_url_path="dashboard/order",
+            )
+        except Exception as e:
+            results["in_app"] = e
         return results
 
     def calendar_event_created(self, *, user_emails: list[str], calendar_event: PutCalendarEvent) -> str:
