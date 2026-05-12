@@ -167,28 +167,33 @@ async def get_workspace_role(
     
     return role
 
+ROLE_HIERARCHY = {'admin': 3, 'coach': 2, 'user': 1}
+
+
+def _meets_required_tier(actual_role: Optional[str], required_permissions: list[str]) -> bool:
+    """Whether `actual_role` satisfies `required_permissions` under ROLE_HIERARCHY.
+
+    `required_permissions` is treated as an allowlist; the minimum-ranked role
+    in it defines the threshold. Higher-ranked roles satisfy a lower threshold.
+    """
+    actual_tier = ROLE_HIERARCHY.get(actual_role or '', 0)
+    required_tiers = [ROLE_HIERARCHY[r] for r in required_permissions if r in ROLE_HIERARCHY]
+    if not required_tiers:
+        return False
+    return actual_tier >= min(required_tiers)
+
+
 class PermissionChecker:
     """Check if user has required permissions for the current account"""
-    
+
     def __init__(self, required_permissions: list[str]) -> None:
         self.required_permissions = required_permissions
 
     def __call__(
-        self, 
+        self,
         account_role: str = Depends(get_account_role)
     ) -> bool:
-        """Validate user has required role for the current account
-        
-        Args:
-            account_role: User's role for current account
-            
-        Returns:
-            True if user has required permissions
-            
-        Raises:
-            HTTPException: If user doesn't have required permissions
-        """
-        if account_role not in self.required_permissions:
+        if not _meets_required_tier(account_role, self.required_permissions):
             raise HTTPException(
                 status_code=HTTP_401_UNAUTHORIZED,
                 detail='User does not have the required permissions for this account.'
@@ -229,19 +234,17 @@ class WorkspacePermissionChecker:
         # Account admins bypass workspace checks
         # if account_role == 'admin':
         #     return True
-        
-        # If no workspace_role, user doesn't have access
+
         if not workspace_role:
             raise HTTPException(
                 status_code=HTTP_403_FORBIDDEN,
                 detail='User does not have access to this workspace.'
             )
-        
-        # Check workspace role
-        if workspace_role not in self.required_permissions:
+
+        if not _meets_required_tier(workspace_role, self.required_permissions):
             raise HTTPException(
                 status_code=HTTP_403_FORBIDDEN,
                 detail=f'Workspace {self.required_permissions[0]} permission required.'
             )
-        
+
         return True

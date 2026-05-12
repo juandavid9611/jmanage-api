@@ -22,7 +22,7 @@ async def list_tours(
 
 @router.post(
     "",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def create_tour(
     put_tour: PutTour,
@@ -56,7 +56,7 @@ async def get_tour(
 
 @router.put(
     "/{tour_id}",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def update_tour(
     tour_id: str,
@@ -84,7 +84,7 @@ async def update_tour(
 
 @router.delete(
     "/{tour_id}",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def delete_tour(
     tour_id: str,
@@ -117,7 +117,7 @@ async def delete_tour(
 
 @router.post(
     "/{tour_id}/generate-presigned-urls",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def generate_tour_presigned_urls(
     tour_id: str,
@@ -148,7 +148,7 @@ async def generate_tour_presigned_urls(
 
 @router.post(
     "/{tour_id}/add_images",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def add_tour_images(
     tour_id: str,
@@ -175,7 +175,7 @@ async def add_tour_images(
 
 @router.patch(
     "/{tour_id}/bookers/{booker_id}",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin', 'coach']))]
 )
 async def update_booker_property(
     tour_id: str,
