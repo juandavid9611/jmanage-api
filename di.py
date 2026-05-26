@@ -41,6 +41,8 @@ from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
 from repositories.votation_repo_ddb import VotationRepo
 from services.votation_service import VotationService
+from services.tournament_invitation_service import TournamentInvitationService
+from repositories.tournament_invitation_repo_ddb import TournamentInvitationRepo
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -63,6 +65,18 @@ def get_payment_request_service() -> PaymentRequestService:
         S3Adapter(),
         get_notification_orchestator(),
         order_repo=OrderRepo(),
+    )
+
+def get_tournament_invitation_service() -> TournamentInvitationService:
+    return TournamentInvitationService(
+        invitation_repo=TournamentInvitationRepo(),
+        tournament_repo=TournamentRepo(),
+        tournament_team_repo=TournamentTeamRepo(),
+        account_repo=AccountRepo(),
+        membership_svc=get_membership_service(),
+        cognito_wrapper=get_cognito_wrapper(),
+        notifications=get_notification_orchestator(),
+        user_repo=UserRepo(),
     )
 
 def get_calendar_service() -> CalendarService:
@@ -130,8 +144,8 @@ def get_file_service() -> FileService:
 def get_tournament_service() -> TournamentService:
     repo = TournamentRepo()
     match_repo = TournamentMatchRepo()
-    standings_svc = StandingsService(match_repo)
     team_repo = TournamentTeamRepo()
+    standings_svc = StandingsService(match_repo, team_repo=team_repo)
     from repositories.s3_adapter import S3Adapter
     return TournamentService(repo, standings_service=standings_svc, team_repo=team_repo, match_repo=match_repo, s3=S3Adapter())
 
@@ -151,16 +165,33 @@ def get_tournament_player_service() -> TournamentPlayerService:
 def get_match_service() -> TournamentMatchService:
     repo = TournamentMatchRepo()
     event_repo = TournamentMatchEventRepo()
-    return TournamentMatchService(repo, event_repo)
+    team_repo = TournamentTeamRepo()
+    tournament_repo = TournamentRepo()
+    return TournamentMatchService(
+        repo,
+        event_repo,
+        team_repo=team_repo,
+        tournament_repo=tournament_repo,
+    )
 
 def get_match_event_service() -> TournamentMatchEventService:
     repo = TournamentMatchEventRepo()
     match_repo = TournamentMatchRepo()
-    return TournamentMatchEventService(repo, match_repo=match_repo)
+    team_repo = TournamentTeamRepo()
+    player_repo = TournamentPlayerRepo()
+    tournament_repo = TournamentRepo()
+    return TournamentMatchEventService(
+        repo,
+        match_repo=match_repo,
+        team_repo=team_repo,
+        player_repo=player_repo,
+        tournament_repo=tournament_repo,
+    )
 
 def get_standings_service() -> StandingsService:
     match_repo = TournamentMatchRepo()
-    return StandingsService(match_repo)
+    team_repo = TournamentTeamRepo()
+    return StandingsService(match_repo, team_repo=team_repo)
 
 def get_votation_service() -> VotationService:
     repo = VotationRepo()
