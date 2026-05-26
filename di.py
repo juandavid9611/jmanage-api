@@ -153,7 +153,13 @@ def get_tournament_team_service() -> TournamentTeamService:
     repo = TournamentTeamRepo()
     tournament_repo = TournamentRepo()
     from repositories.s3_adapter import S3Adapter
-    return TournamentTeamService(repo, tournament_repo=tournament_repo, s3=S3Adapter(), notifications=get_notification_orchestator())
+    return TournamentTeamService(
+        repo,
+        tournament_repo=tournament_repo,
+        s3=S3Adapter(),
+        notifications=get_notification_orchestator(),
+        invitation_svc=get_tournament_invitation_service(),
+    )
 
 def get_tournament_player_service() -> TournamentPlayerService:
     repo = TournamentPlayerRepo()
