@@ -1,6 +1,9 @@
 from repositories.membership_repo_ddb import MembershipRepo
 from typing import Dict, Any, List
 
+VALID_ROLES = {"admin", "user"}
+
+
 class MembershipService:
     def __init__(self, repo: MembershipRepo):
         self.repo = repo
@@ -36,6 +39,18 @@ class MembershipService:
     def disable_membership(self, user_id: str, account_id: str, workspace_id: str) -> None:
         """Disable a membership - now requires workspace_id"""
         self.repo.update_status(user_id, account_id, workspace_id, "disabled")
+
+    def update_role(self, user_id: str, account_id: str, workspace_id: str, role: str) -> Dict[str, Any]:
+        """Change a membership's role. Non-destructive — only the role attribute changes."""
+        if role not in VALID_ROLES:
+            raise ValueError(f"Invalid role '{role}'. Must be one of: {sorted(VALID_ROLES)}")
+        self.repo.update_role(user_id, account_id, workspace_id, role)
+        return {
+            "user_id": user_id,
+            "account_id": account_id,
+            "workspace_id": workspace_id,
+            "role": role,
+        }
     
     def delete_all_user_memberships(self, user_id: str) -> None:
         """Delete all memberships for a user (used when deleting user)"""
@@ -53,47 +68,3 @@ class MembershipService:
             if m.get("workspace_id") == workspace_id:
                 return m.get("role")
         return None
-
-    def update_user_active_workspace(self, user_id: str, account_id: str, new_workspace_id: str) -> Dict[str, Any] | None:
-        """Switch the user's membership to a different workspace.
-        
-        Finds the user's current active membership, deletes it, and creates
-        a new membership for the target workspace_id, preserving the role.
-        
-        Returns the new membership info, or None if no active membership found.
-        """
-        memberships = self.repo.get_user_account_memberships(user_id, account_id)
-        
-        # Find current active membership
-        current = None
-        for membership in memberships:
-            if membership.get("status") == "active":
-                current = membership
-                break
-        
-        if not current:
-            return None
-        
-        old_workspace_id = current.get("workspace_id")
-        role = current.get("role", "user")
-        
-        # If already on the target workspace, no-op
-        if old_workspace_id == new_workspace_id:
-            return {
-                "user_id": user_id,
-                "account_id": account_id,
-                "workspace_id": new_workspace_id,
-                "role": role
-            }
-        
-        # Delete old membership and create new one with the new workspace
-        self.repo.delete(user_id, account_id, old_workspace_id)
-        self.repo.create(user_id, account_id, new_workspace_id, role, "active")
-        
-        return {
-            "user_id": user_id,
-            "account_id": account_id,
-            "workspace_id": new_workspace_id,
-            "role": role
-        }
-

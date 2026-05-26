@@ -22,6 +22,7 @@ from api.notifications import router as notifications_router
 from api.public_tournaments import router as public_tournaments_router
 from api.votations import router as votations_router
 from api.invitations import router as invitations_router
+from api.public_invitations import router as public_invitations_router
 from core.error_handlers import install_error_handlers
 from core.logging_config import configure_logging
 from core.request_context import RequestContextMiddleware
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(public_tournaments_router)
     app.include_router(votations_router)
     app.include_router(invitations_router)
+    app.include_router(public_invitations_router)
     # locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
     return app
 

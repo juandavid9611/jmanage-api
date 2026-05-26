@@ -96,3 +96,6 @@ class TournamentTeamRepo:
             ReturnValues="ALL_NEW",
         )
         return resp.get("Attributes")
+
+    def update_stats(self, team_id: str, stats: dict[str, Any]) -> dict[str, Any] | None:
+        return self.update(team_id, {"stats": stats})
