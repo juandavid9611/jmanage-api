@@ -220,6 +220,23 @@ class MembershipRepo:
         except Exception as e:
             print(f"Error updating membership status: {e}")
             raise e
+
+    def update_role(self, user_id: str, account_id: str, workspace_id: str, role: str) -> None:
+        """Update a membership's role using UpdateExpression (never overwrites the item)."""
+        try:
+            self._table.update_item(
+                Key={
+                    "PK": self._user_pk(user_id),
+                    "SK": self._account_workspace_sk(account_id, workspace_id)
+                },
+                UpdateExpression="SET #role = :role",
+                ConditionExpression="attribute_exists(PK)",
+                ExpressionAttributeNames={"#role": "role"},
+                ExpressionAttributeValues={":role": role}
+            )
+        except Exception as e:
+            print(f"Error updating membership role: {e}")
+            raise e
     
     # update_workspace() removed - workspace is now part of the key, not an attribute
     
