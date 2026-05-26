@@ -38,5 +38,8 @@ def revoke_invitation(
     account_id: str = Depends(get_account_id),
     svc: TournamentInvitationService = Depends(get_tournament_invitation_service),
 ):
-    svc.revoke(account_id=account_id, tournament_team_id=team_id)
+    try:
+        svc.revoke(account_id=account_id, tournament_team_id=team_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"status": "ok"}
