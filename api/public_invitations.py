@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from jose import JWTError, jwt
+from starlette.status import HTTP_401_UNAUTHORIZED
 
 from JWTBearer import JWTAuthorizationCredentials
 from di import get_tournament_invitation_service
@@ -43,8 +44,14 @@ def _verify_bearer(authorization: str) -> tuple[str, str]:
     except JWTError as exc:
         raise HTTPException(status_code=401, detail=f"Invalid bearer token: {exc}")
 
-    if not _jwt_bearer.verify_jwk_token(creds):
-        raise HTTPException(status_code=401, detail="Bearer token signature verification failed")
+    try:
+        valid = _jwt_bearer.verify_jwk_token(creds)
+    except HTTPException:
+        # verify_jwk_token may raise HTTPException(403) when kid is not in the JWKS
+        # map; normalise all auth failures to 401 as documented on this router.
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid bearer token")
+    if not valid:
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Bearer token signature verification failed")
 
     user_id: str = creds.claims.get("sub", "")
     user_email: str = creds.claims.get("email", "")
@@ -82,6 +89,10 @@ def accept_invite(
     - If no header is present (or it is absent), the unauthenticated path runs:
       a password must be supplied in the request body, a new Cognito user is created,
       and access/id/refresh tokens are returned so the frontend can sign in immediately.
+
+    Note: the bearer token **must** be a Cognito **id_token** (not access_token).
+    The accept flow requires the ``email`` claim, which is only present in the id_token.
+    Frontend: obtain it via ``fetchAuthSession()`` as ``tokens.idToken``.
     """
     user_id: Optional[str] = None
     user_email: Optional[str] = None

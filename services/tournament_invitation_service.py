@@ -178,6 +178,11 @@ class TournamentInvitationService:
         - Unauthenticated: a new Cognito user is created, stored in the user table,
           and JWT tokens are returned so the frontend can sign in immediately.
         """
+        # NOTE: race condition — two concurrent accepts on the same pending invitation
+        # can both pass the status check below and proceed to create_membership / Cognito
+        # user creation.  Acceptable for current low-concurrency usage.  Proper fix:
+        # a DynamoDB conditional update (ConditionExpression: status = "pending") so
+        # only one writer wins; the loser gets a ConditionalCheckFailedException.
         inv = self._invitations.get_by_token(token)
         if not inv:
             raise ValueError("Invalid invitation token")
@@ -218,6 +223,10 @@ class TournamentInvitationService:
         # Fetch account to resolve default workspace (required by MembershipService).
         account = self._accounts.get(inv["account_id"]) or {}
         default_workspace = (account.get("settings") or {}).get("default_workspace")
+        if not default_workspace:
+            raise ValueError(
+                "Account has no default workspace configured; configure one before accepting invitations"
+            )
 
         self._memberships.create_membership(
             user_id=user_id,
