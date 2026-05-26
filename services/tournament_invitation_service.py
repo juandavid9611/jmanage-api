@@ -42,10 +42,14 @@ class TournamentInvitationService:
     ) -> dict:
         """Idempotent: if a pending invitation already exists for this (team, email),
         returns it without resending. Otherwise creates + sends."""
-        # Idempotency: skip if a pending invitation already exists for this (team, email).
-        existing = self._invitations.list_pending_for_team_email(tournament_team_id, email)
-        if existing:
-            return existing[0]
+        # Idempotency: skip if a pending OR accepted invitation already exists for this
+        # (team, email). Expired/revoked rows are legitimate retries and do not block.
+        existing = self._invitations.list_by_team_email(tournament_team_id, email)
+        blocking = [r for r in existing if r.get("status") in ("pending", "accepted")]
+        if blocking:
+            # Prefer the pending row if both somehow exist; otherwise return the accepted one.
+            pending = [r for r in blocking if r.get("status") == "pending"]
+            return pending[0] if pending else blocking[0]
 
         now = self._now()
         invitation = {

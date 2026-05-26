@@ -79,7 +79,7 @@ class TournamentTeamService:
         if not updates:
             return self._resolve_documents(self._resolve_logo(existing))
         updated = self.repo.update(team_id, updates)
-        if updated and "contact_email" in updates:
+        if updated and updates.get("contact_email"):
             self._trigger_invitation(updated)
         return self._resolve_documents(self._resolve_logo(updated)) if updated else None
 

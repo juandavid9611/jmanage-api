@@ -87,6 +87,17 @@ class TournamentInvitationRepo:
             ),
         )
 
+    def list_by_team_email(self, tournament_team_id: str, email: str) -> list[dict]:
+        """Scan-and-filter for ALL invitation rows matching (tournament_team_id, email),
+        regardless of status. Used to prevent re-invitation after acceptance."""
+        return _scan_all(
+            self._table,
+            FilterExpression=(
+                Attr("tournament_team_id").eq(tournament_team_id)
+                & Attr("email").eq(email)
+            ),
+        )
+
     def update_status(self, invitation_id: str, status: str, **extra_fields) -> dict:
         """Update status + updated_at + any extra fields (e.g. accepted_at)."""
         updates = {"status": status, **extra_fields}
