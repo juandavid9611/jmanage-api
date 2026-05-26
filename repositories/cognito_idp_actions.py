@@ -99,7 +99,45 @@ class CognitoIdentityProviderWrapper:
                 )
                 raise
         return response
-    
+
+    def admin_create_confirmed_user(self, *, user_email: str, name: str, password: str) -> dict:
+        """Create a Cognito user already confirmed and email-verified, with a permanent
+        password. Used by the invitation-accept flow where the magic link proves email
+        ownership and we don't want the standard sign-up confirmation roundtrip.
+
+        Returns the admin_create_user response dict (which includes the User object with Sub).
+        Raises ClientError on failure; caller should catch UsernameExistsException.
+        """
+        try:
+            # Step 1: create the user, suppress the welcome email (we send our own context via Courier).
+            create_response = self.cognito_idp_client.admin_create_user(
+                UserPoolId=self.user_pool_id,
+                Username=user_email,
+                UserAttributes=[
+                    {"Name": "email", "Value": user_email},
+                    {"Name": "email_verified", "Value": "true"},
+                    {"Name": "name", "Value": name},
+                    {"Name": "custom:role", "Value": "user"},
+                ],
+                MessageAction="SUPPRESS",
+            )
+            # Step 2: set permanent password — bypasses FORCE_CHANGE_PASSWORD state.
+            self.cognito_idp_client.admin_set_user_password(
+                UserPoolId=self.user_pool_id,
+                Username=user_email,
+                Password=password,
+                Permanent=True,
+            )
+            return create_response
+        except ClientError as err:
+            logger.error(
+                "Couldn't admin-create user %s. Code=%s Msg=%s",
+                user_email,
+                err.response["Error"]["Code"],
+                err.response["Error"]["Message"],
+            )
+            raise
+
     def update_user_field(self, user_email, field, value):
         """
         Updates the user's name in the user pool.
