@@ -171,11 +171,17 @@ ROLE_HIERARCHY = {'admin': 3, 'coach': 2, 'user': 1}
 
 
 def _meets_required_tier(actual_role: Optional[str], required_permissions: list[str]) -> bool:
-    """Whether `actual_role` satisfies `required_permissions` under ROLE_HIERARCHY.
+    """Whether `actual_role` satisfies `required_permissions`.
 
-    `required_permissions` is treated as an allowlist; the minimum-ranked role
-    in it defines the threshold. Higher-ranked roles satisfy a lower threshold.
+    Two-stage check:
+      1. Direct allowlist — if `actual_role` is named in `required_permissions`, allow.
+         This is what lets non-hierarchical roles (e.g. `team_owner`) gate specific
+         endpoints without granting access to anything else.
+      2. Hierarchy fallback — for roles in ROLE_HIERARCHY, the minimum-ranked role in
+         `required_permissions` defines the threshold; higher-ranked roles pass too.
     """
+    if actual_role and actual_role in required_permissions:
+        return True
     actual_tier = ROLE_HIERARCHY.get(actual_role or '', 0)
     required_tiers = [ROLE_HIERARCHY[r] for r in required_permissions if r in ROLE_HIERARCHY]
     if not required_tiers:
