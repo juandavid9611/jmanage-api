@@ -15,7 +15,7 @@ Endpoint groups:
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 
-from auth import PermissionChecker, get_account_id, get_current_user
+from auth import PermissionChecker, get_account_id, get_account_role, get_current_user
 from di import (
     get_tournament_service,
     get_tournament_team_service,
@@ -60,9 +60,10 @@ from api.schemas.tournaments import (
 )
 
 
-ADMIN = PermissionChecker(required_permissions=["admin"])
+ADMIN = PermissionChecker(required_permissions=["admin", "user"])
 ALL_ROLES = PermissionChecker(required_permissions=["admin", "user"])
 ALL_ROLES_INCL_TEAM_OWNER = PermissionChecker(required_permissions=["admin", "user", "team_owner"])
+ADMIN_OR_TEAM_OWNER = PermissionChecker(required_permissions=["admin", "team_owner"])
 
 
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
@@ -404,12 +405,14 @@ async def list_players(
     return svc.list_players(tournament_id, team_id=team_id, sort_by=sort)
 
 
-@router.post("/{tournament_id}/teams/{team_id}/players", dependencies=[Depends(ADMIN)])
+@router.post("/{tournament_id}/teams/{team_id}/players", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def create_player(
     tournament_id: str,
     team_id: str,
     body: CreatePlayer,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
@@ -417,7 +420,13 @@ async def create_player(
     _require_tournament(t_svc, tournament_id, account_id)
     if not team_svc.belongs_to_tournament(team_id, tournament_id):
         raise HTTPException(status_code=404, detail="Team not found in tournament")
-    return svc.create_player(tournament_id, team_id, body)
+    try:
+        return svc.create_player(
+            tournament_id, team_id, body,
+            acting_user_id=user["sub"], acting_role=account_role,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @router.get("/{tournament_id}/players/{player_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
@@ -435,12 +444,14 @@ async def get_player(
     return item
 
 
-@router.patch("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN)])
+@router.patch("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def update_player(
     tournament_id: str,
     player_id: str,
     body: PatchPlayer,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
@@ -448,15 +459,23 @@ async def update_player(
     existing = svc.get_player(player_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
-    return svc.update_player(player_id, body)
+    try:
+        return svc.update_player(
+            player_id, body,
+            acting_user_id=user["sub"], acting_role=account_role,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
-@router.post("/{tournament_id}/players/{player_id}/avatar-url", dependencies=[Depends(ADMIN)])
+@router.post("/{tournament_id}/players/{player_id}/avatar-url", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def get_player_avatar_upload_url(
     tournament_id: str,
     player_id: str,
     body: PlayerAvatarRequest,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
@@ -464,14 +483,22 @@ async def get_player_avatar_upload_url(
     existing = svc.get_player(player_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
-    return svc.generate_avatar_upload_url(player_id, account_id, body.filename, body.content_type)
+    try:
+        return svc.generate_avatar_upload_url(
+            player_id, account_id, body.filename, body.content_type,
+            acting_user_id=user["sub"], acting_role=account_role,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
-@router.delete("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN)])
+@router.delete("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def delete_player(
     tournament_id: str,
     player_id: str,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
@@ -479,7 +506,10 @@ async def delete_player(
     existing = svc.get_player(player_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
-    svc.delete_player(player_id)
+    try:
+        svc.delete_player(player_id, acting_user_id=user["sub"], acting_role=account_role)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     return {"deleted": player_id}
 
 
