@@ -67,7 +67,9 @@ def get_payment_request_service() -> PaymentRequestService:
         order_repo=OrderRepo(),
     )
 
-def get_tournament_invitation_service() -> TournamentInvitationService:
+def get_tournament_invitation_service() -> TournamentInvitationService | None:
+    if not os.environ.get("TOURNAMENT_INVITATION_TABLE_NAME"):
+        return None
     return TournamentInvitationService(
         invitation_repo=TournamentInvitationRepo(),
         tournament_repo=TournamentRepo(),
