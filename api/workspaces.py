@@ -8,7 +8,7 @@ from services.workspace_service import WorkspaceService
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-@router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+@router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user', 'team_owner']))])
 async def list_workspaces(
     user: dict = Depends(get_current_user),
     account_id: str = Depends(get_account_id),
@@ -16,7 +16,7 @@ async def list_workspaces(
     ):
     return svc.get_related(user, account_id)
 
-@router.get("/all", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+@router.get("/all", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user', 'team_owner']))])
 async def list_all_workspaces(
     account_id: str = Depends(get_account_id),
     svc: WorkspaceService = Depends(get_workspace_service)

@@ -61,7 +61,7 @@ async def create_user(
     item = svc.create(create_user)
     return item
 
-@router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+@router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user', 'team_owner']))])
 async def get_user(
     user_id: str, 
     account_id: str = Depends(get_account_id),
