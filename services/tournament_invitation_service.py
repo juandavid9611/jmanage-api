@@ -228,12 +228,27 @@ class TournamentInvitationService:
                 "Account has no default workspace configured; configure one before accepting invitations"
             )
 
-        self._memberships.create_membership(
-            user_id=user_id,
-            account_id=inv["account_id"],
-            workspace_id=default_workspace,
-            role="team_owner",
+        existing_memberships = self._memberships.get_user_account_memberships(
+            user_id, inv["account_id"]
         )
+        has_membership = any(
+            m.get("workspace_id") == default_workspace for m in existing_memberships
+        )
+        if has_membership:
+            logger.info(
+                "accept: user %s already has a membership on account %s / workspace %s — "
+                "skipping create_membership to preserve existing role",
+                user_id,
+                inv["account_id"],
+                default_workspace,
+            )
+        else:
+            self._memberships.create_membership(
+                user_id=user_id,
+                account_id=inv["account_id"],
+                workspace_id=default_workspace,
+                role="team_owner",
+            )
         self._teams.update(inv["tournament_team_id"], {"owner_user_id": user_id})
         now = self._now()
         self._invitations.update_status(
