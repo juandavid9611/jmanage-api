@@ -15,6 +15,16 @@ async def get_my_memberships(
     user_id = user.get("sub")
     return svc.get_user_memberships(user_id)
 
+
+@router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def list_user_memberships(
+    user_id: str,
+    account_id: str = Depends(get_account_id),
+    svc: MembershipService = Depends(get_membership_service),
+):
+    """List all memberships for a target user in the current account (admin only)."""
+    return svc.get_user_account_memberships(user_id, account_id)
+
 @router.post("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_membership(
     user_id: str,
