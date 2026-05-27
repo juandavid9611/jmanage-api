@@ -1,7 +1,7 @@
 from repositories.membership_repo_ddb import MembershipRepo
 from typing import Dict, Any, List
 
-VALID_ROLES = {"admin", "user"}
+VALID_ROLES = {"admin", "user", "team_owner", "coach"}
 
 
 class MembershipService:
