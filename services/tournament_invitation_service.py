@@ -175,8 +175,9 @@ class TournamentInvitationService:
         Two paths:
         - Authenticated: caller provides their JWT; we verify the email matches and
           link the existing user to the team/account without creating new credentials.
-        - Unauthenticated: a new Cognito user is created, stored in the user table,
-          and JWT tokens are returned so the frontend can sign in immediately.
+        - Unauthenticated: a new Cognito user is created (confirmed, with permanent
+          password) and stored in the user table. The frontend signs the user in via
+          Amplify (SRP) after this returns — no admin-credential sign-in here.
         """
         # NOTE: race condition — two concurrent accepts on the same pending invitation
         # can both pass the status check below and proceed to create_membership / Cognito
@@ -193,7 +194,6 @@ class TournamentInvitationService:
             raise ValueError("Invitation expired")
 
         user_id: str
-        tokens: dict = {}
 
         if authenticated_user_id and authenticated_email:
             # Authenticated path: enforce email match.
@@ -212,13 +212,9 @@ class TournamentInvitationService:
             user = cognito_resp["User"]
             user_id = next(a["Value"] for a in user["Attributes"] if a["Name"] == "sub")
             self._users.create({"id": user_id, "email": inv["email"], "name": inv["email"].split("@")[0]})
-            sign_in = self._cognito.start_sign_in(user_name=inv["email"], password=password)
-            auth = sign_in.get("AuthenticationResult") or {}
-            tokens = {
-                "access_token": auth.get("AccessToken"),
-                "id_token": auth.get("IdToken"),
-                "refresh_token": auth.get("RefreshToken"),
-            }
+            # Frontend signs the user in via Amplify (SRP) after this returns — no need
+            # for an API-side admin sign-in, which would require ADMIN_USER_PASSWORD_AUTH
+            # on the Cognito client and isn't enabled by default.
 
         # Fetch account to resolve default workspace (required by MembershipService).
         account = self._accounts.get(inv["account_id"]) or {}
@@ -261,7 +257,6 @@ class TournamentInvitationService:
             "account_id": inv["account_id"],
             "tournament_id": inv["tournament_id"],
             "tournament_team_id": inv["tournament_team_id"],
-            **tokens,
         }
 
     def list_for_tournament(self, *, account_id: str, tournament_id: str) -> list[dict]:
