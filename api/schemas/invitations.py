@@ -57,6 +57,7 @@ class InvitationSummary(CamelModel):
 
 class AcceptInvitationRequest(CamelModel):
     password: Optional[str] = None  # required only on the unauthenticated path
+    name: Optional[str] = None  # captured on the unauthenticated path; ignored when JWT auth is used
 
 
 class AcceptInvitationResponse(CamelModel):

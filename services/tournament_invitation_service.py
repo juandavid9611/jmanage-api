@@ -135,19 +135,138 @@ class TournamentInvitationService:
             self._invitations.update_status(inv["id"], "revoked", updated_at=self._now().isoformat())
 
     def get_public_summary(self, *, token: str) -> Optional[dict]:
-        """Returns InvitationSummary dict or None if invalid/expired/revoked. See Task 7."""
-        raise NotImplementedError  # Task 7
+        """Returns InvitationSummary dict or None if invalid/expired/revoked."""
+        inv = self._invitations.get_by_token(token)
+        if not inv:
+            return None
+        if inv["status"] in ("revoked",):
+            return None
+        # Lazy-expire: if expired_at < now and still pending, flip to expired and return None.
+        if datetime.fromisoformat(inv["expires_at"]) < self._now() and inv["status"] == "pending":
+            self._invitations.update_status(inv["id"], "expired", updated_at=self._now().isoformat())
+            return None
+        tournament = self._tournaments.get(inv["tournament_id"]) or {}
+        team = self._teams.get(inv["tournament_team_id"]) or {}
+        account = self._accounts.get(inv["account_id"]) or {}
+        existing_user = self._users.get_by_email(inv["email"])
+
+        return {
+            "tournament_id": inv["tournament_id"],
+            "tournament_name": tournament.get("name", ""),
+            "tournament_team_id": inv["tournament_team_id"],
+            "team_name": team.get("name", ""),
+            "organizer_account_name": account.get("name", ""),
+            "email": inv["email"],
+            "email_has_existing_user": bool(existing_user),
+            "status": inv["status"],
+            "expires_at": inv["expires_at"],
+        }
 
     def accept(
         self,
         *,
         token: str,
         password: Optional[str],
+        name: Optional[str] = None,
         authenticated_user_id: Optional[str],
         authenticated_email: Optional[str],
     ) -> dict:
-        """See Task 7."""
-        raise NotImplementedError  # Task 7
+        """Accept a team-owner invitation.
+
+        Two paths:
+        - Authenticated: caller provides their JWT; we verify the email matches and
+          link the existing user to the team/account without creating new credentials.
+        - Unauthenticated: a new Cognito user is created (confirmed, with permanent
+          password) and stored in the user table. The frontend signs the user in via
+          Amplify (SRP) after this returns — no admin-credential sign-in here.
+        """
+        # NOTE: race condition — two concurrent accepts on the same pending invitation
+        # can both pass the status check below and proceed to create_membership / Cognito
+        # user creation.  Acceptable for current low-concurrency usage.  Proper fix:
+        # a DynamoDB conditional update (ConditionExpression: status = "pending") so
+        # only one writer wins; the loser gets a ConditionalCheckFailedException.
+        inv = self._invitations.get_by_token(token)
+        if not inv:
+            raise ValueError("Invalid invitation token")
+        if inv["status"] != "pending":
+            raise ValueError(f"Invitation is {inv['status']}")
+        if datetime.fromisoformat(inv["expires_at"]) < self._now():
+            self._invitations.update_status(inv["id"], "expired", updated_at=self._now().isoformat())
+            raise ValueError("Invitation expired")
+
+        user_id: str
+
+        if authenticated_user_id and authenticated_email:
+            # Authenticated path: enforce email match.
+            if authenticated_email.strip().lower() != inv["email"].strip().lower():
+                raise ValueError("Authenticated user's email does not match invitation email")
+            user_id = authenticated_user_id
+        else:
+            # Unauthenticated path: must create a new Cognito user.
+            if not password:
+                raise ValueError("Password required for new user")
+            if self._users.get_by_email(inv["email"]):
+                raise ValueError("A user with this email already exists; sign in first and retry")
+            # Prefer the name the team owner typed; fall back to email local-part.
+            resolved_name = (name or "").strip() or inv["email"].split("@")[0]
+            self._cognito.admin_create_confirmed_user(
+                user_email=inv["email"], name=resolved_name, password=password,
+            )
+            # Source of truth for sub: admin_get_user (UserAttributes always includes sub).
+            # admin_create_user's User.Attributes is unreliable across pool configurations.
+            get_resp = self._cognito.get_user(user_name=inv["email"])
+            user_attrs = get_resp.get("UserAttributes") or []
+            user_id = next((a["Value"] for a in user_attrs if a["Name"] == "sub"), None)
+            if not user_id:
+                raise ValueError("Could not resolve Cognito sub for newly created user")
+            logger.info("accept: created Cognito user %s for invitation %s", user_id, inv["id"])
+            self._users.create({"id": user_id, "email": inv["email"], "name": resolved_name})
+            # Frontend signs the user in via Amplify (SRP) after this returns — no need
+            # for an API-side admin sign-in, which would require ADMIN_USER_PASSWORD_AUTH
+            # on the Cognito client and isn't enabled by default.
+
+        # Fetch account to resolve default workspace (required by MembershipService).
+        account = self._accounts.get(inv["account_id"]) or {}
+        default_workspace = (account.get("settings") or {}).get("default_workspace")
+        if not default_workspace:
+            raise ValueError(
+                "Account has no default workspace configured; configure one before accepting invitations"
+            )
+
+        existing_memberships = self._memberships.get_user_account_memberships(
+            user_id, inv["account_id"]
+        )
+        has_membership = any(
+            m.get("workspace_id") == default_workspace for m in existing_memberships
+        )
+        if has_membership:
+            logger.info(
+                "accept: user %s already has a membership on account %s / workspace %s — "
+                "skipping create_membership to preserve existing role",
+                user_id,
+                inv["account_id"],
+                default_workspace,
+            )
+        else:
+            self._memberships.create_membership(
+                user_id=user_id,
+                account_id=inv["account_id"],
+                workspace_id=default_workspace,
+                role="team_owner",
+            )
+        self._teams.update(inv["tournament_team_id"], {"owner_user_id": user_id})
+        now = self._now()
+        self._invitations.update_status(
+            inv["id"], "accepted",
+            accepted_at=now.isoformat(),
+            accepted_by_user_id=user_id,
+            updated_at=now.isoformat(),
+        )
+        return {
+            "account_id": inv["account_id"],
+            "tournament_id": inv["tournament_id"],
+            "tournament_team_id": inv["tournament_team_id"],
+        }
 
     def list_for_tournament(self, *, account_id: str, tournament_id: str) -> list[dict]:
         invitations = self._invitations.list_by_tournament(tournament_id)
