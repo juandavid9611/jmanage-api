@@ -105,6 +105,7 @@ def accept_invite(
             token=token,
             password=body.password,
             name=body.name,
+            phone_number=body.phone_number,
             authenticated_user_id=user_id,
             authenticated_email=user_email,
         )
