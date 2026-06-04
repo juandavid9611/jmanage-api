@@ -50,10 +50,11 @@ def get_notification_repo() -> NotificationRepo:
 
 def get_notification_orchestator() -> Notifications:
     email_sender = CourierNotificationSender()
-    # Tournaments use a separate Courier workspace; falls back to the main sender if the env var is unset.
+    # Tournaments live in their own Courier workspace — no fallback to the main token,
+    # because routing tournament templates through the wrong workspace silently breaks email.
     tournaments_token = os.environ.get("COURIER_TOURNAMENTS_AUTH_TOKEN")
     tournaments_email_sender = (
-        CourierNotificationSender(auth_token=tournaments_token) if tournaments_token else email_sender
+        CourierNotificationSender(auth_token=tournaments_token) if tournaments_token else None
     )
     repo = get_notification_repo()
     in_app_sender = DdbInAppSender(repo=repo, onesignal=OneSignalNotificationSender())

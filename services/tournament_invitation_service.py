@@ -71,17 +71,13 @@ class TournamentInvitationService:
         return invitation
 
     def _send_invitation_email(self, invitation: dict) -> None:
-        tournament = self._tournaments.get(invitation["tournament_id"])
         team = self._teams.get(invitation["tournament_team_id"])
-        account = self._accounts.get(invitation["account_id"])
         base = os.environ.get("BASE_ACTION_URL", "https://jmanage.app").rstrip("/")
         invite_url = f"{base}/invite/{invitation['token']}"
         self._notifications.team_owner_invited(
             email=invitation["email"],
-            organizer_name=(account or {}).get("name", "Organizador"),
-            tournament_name=(tournament or {}).get("name", "Torneo"),
-            team_name=(team or {}).get("name", "Equipo"),
-            invite_url=invite_url,
+            club_name=(team or {}).get("name", "Equipo"),
+            redirect_url=invite_url,
         )
 
     def _assert_team_belongs_to_account(self, team: dict | None, account_id: str) -> None:
@@ -167,8 +163,6 @@ class TournamentInvitationService:
         *,
         token: str,
         password: Optional[str],
-        name: Optional[str] = None,
-        phone_number: Optional[str] = None,
         authenticated_user_id: Optional[str],
         authenticated_email: Optional[str],
     ) -> dict:
@@ -208,9 +202,9 @@ class TournamentInvitationService:
                 raise ValueError("Password required for new user")
             if self._users.get_by_email(inv["email"]):
                 raise ValueError("A user with this email already exists; sign in first and retry")
-            # Prefer the name the team owner typed; fall back to email local-part.
-            resolved_name = (name or "").strip() or inv["email"].split("@")[0]
-            resolved_phone = (phone_number or "").strip()
+            # Cognito requires a `name` attribute; derive from email local-part since
+            # the invite form only collects credentials. Users can update later.
+            resolved_name = inv["email"].split("@")[0]
             self._cognito.admin_create_confirmed_user(
                 user_email=inv["email"], name=resolved_name, password=password,
             )
@@ -222,10 +216,7 @@ class TournamentInvitationService:
             if not user_id:
                 raise ValueError("Could not resolve Cognito sub for newly created user")
             logger.info("accept: created Cognito user %s for invitation %s", user_id, inv["id"])
-            user_record = {"id": user_id, "email": inv["email"], "name": resolved_name}
-            if resolved_phone:
-                user_record["phone_number"] = resolved_phone
-            self._users.create(user_record)
+            self._users.create({"id": user_id, "email": inv["email"], "name": resolved_name})
             # Frontend signs the user in via Amplify (SRP) after this returns — no need
             # for an API-side admin sign-in, which would require ADMIN_USER_PASSWORD_AUTH
             # on the Cognito client and isn't enabled by default.

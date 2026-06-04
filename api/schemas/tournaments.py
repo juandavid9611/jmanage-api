@@ -131,6 +131,7 @@ class CreateTeam(BaseModel):
     group_id: str | None = None
     manager_name: str | None = None
     contact_email: str | None = None
+    contact_phone: str | None = None
     primary_color: str | None = None
     rules_accepted: bool = False
 
@@ -142,6 +143,7 @@ class PatchTeam(BaseModel):
     seed: int | None = None
     manager_name: str | None = None
     contact_email: str | None = None
+    contact_phone: str | None = None
     primary_color: str | None = None
     rules_accepted: bool | None = None
 

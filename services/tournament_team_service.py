@@ -2,6 +2,7 @@
 
 import logging
 import mimetypes
+import os
 from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Any
@@ -39,6 +40,7 @@ class TournamentTeamService:
             "seed": body.seed,
             "manager_name": body.manager_name or "",
             "contact_email": body.contact_email or "",
+            "contact_phone": body.contact_phone or "",
             "primary_color": body.primary_color or "",
             "rules_accepted": body.rules_accepted,
             "documents": {},
@@ -51,8 +53,9 @@ class TournamentTeamService:
         self.repo.put(item)
         if self.tournament_repo:
             self.tournament_repo.increment_team_count(tournament_id)
-        self._notify_team_registered(item, tournament_id)
-        self._trigger_invitation(item)
+        # Create the invitation first so we can reuse its URL as the team_registered redirect.
+        invite_url = self._trigger_invitation(item)
+        self._notify_team_registered(item, tournament_id, redirect_url=invite_url)
         return item
 
     def get_team(self, team_id: str) -> dict[str, Any] | None:
@@ -191,14 +194,15 @@ class TournamentTeamService:
         item["documents"] = resolved
         return item
 
-    def _trigger_invitation(self, team: dict[str, Any]) -> None:
+    def _trigger_invitation(self, team: dict[str, Any]) -> str:
         """Best-effort: call invitation service to create (or no-op if already pending).
-        Never raises — a Courier/DDB blip must not break the team-add flow."""
+        Returns the invite URL on success, "" otherwise. Never raises — a Courier/DDB
+        blip must not break the team-add flow."""
         if not self._invitation_svc:
-            return
+            return ""
         contact_email = (team.get("contact_email") or "").strip()
         if not contact_email:
-            return
+            return ""
         # Derive account_id from the tournament row (not stored on the team item).
         account_id = None
         tournament_id = team.get("tournament_id", "")
@@ -210,22 +214,28 @@ class TournamentTeamService:
                 "Cannot trigger invitation for team %s: account_id could not be resolved",
                 team.get("id"),
             )
-            return
+            return ""
         try:
-            self._invitation_svc.create_for_team(
+            invitation = self._invitation_svc.create_for_team(
                 account_id=account_id,
                 tournament_id=tournament_id,
                 tournament_team_id=team["id"],
                 email=contact_email,
             )
+            token = (invitation or {}).get("token")
+            if not token:
+                return ""
+            base = os.environ.get("BASE_ACTION_URL", "https://jmanage.app").rstrip("/")
+            return f"{base}/invite/{token}"
         except Exception:
             logger.exception(
                 "Failed to create invitation for team %s (email=%s); team was saved successfully",
                 team.get("id"),
                 contact_email,
             )
+            return ""
 
-    def _notify_team_registered(self, team: dict[str, Any], tournament_id: str) -> None:
+    def _notify_team_registered(self, team: dict[str, Any], tournament_id: str, redirect_url: str = "") -> None:
         if not self.notifications:
             return
         contact_email = team.get("contact_email", "")
@@ -240,6 +250,7 @@ class TournamentTeamService:
                 email=contact_email,
                 club_name=team.get("name", ""),
                 tournament_name=tournament_name,
+                redirect_url=redirect_url,
             )
         except Exception:
             pass  # best-effort — don't fail team creation if notification fails

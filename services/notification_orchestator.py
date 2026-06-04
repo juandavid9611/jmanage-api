@@ -36,8 +36,9 @@ class Notifications:
     ) -> None:
         self._email_sender = email_sender
         self._in_app_sender = in_app_sender
-        # Tournaments live in a separate Courier workspace; fall back to the main sender when not configured.
-        self._tournaments_email_sender = tournaments_email_sender or email_sender
+        # Tournaments live in a separate Courier workspace. No fallback — if it's
+        # unconfigured, tournament methods skip the send instead of misrouting it.
+        self._tournaments_email_sender = tournaments_email_sender
         if _env() == "prod":
             self._admin_emails = ["loga9822@hotmail.com", "clubdeportivovittoria+pagos@gmail.com", "jd_rodrigueza@javeriana.edu.co"]
             self._admin_email_notifications_enabled = True
@@ -331,47 +332,57 @@ class Notifications:
             action_url_path="dashboard/calendar"
         )
     
-    def team_registered(self, *, email: str, club_name: str, tournament_name: str) -> dict[str, str | Exception]:
+    def team_registered(self, *, email: str, club_name: str, tournament_name: str, redirect_url: str = "") -> dict[str, str | Exception]:
+        if not self._tournaments_email_sender:
+            logger.warning("COURIER_TOURNAMENTS_AUTH_TOKEN not configured; skipping team_registered email for %s", email)
+            return {}
         results: dict[str, str | Exception] = {}
         try:
-            results["email"] = self._send_email(
+            # Tournament-related template lives in the tournaments Courier workspace.
+            results["email"] = self._tournaments_email_sender.send_template(
                 template_id=self.COURIER_TEMPLATE_TEAM_REGISTERED,
                 to_email=email,
-                data={"club_name": club_name, "tournament_name": tournament_name},
+                data={
+                    "club_name": club_name,
+                    "tournament_name": tournament_name,
+                    "redirect_url": redirect_url,
+                },
             )
         except Exception as e:
             results["email"] = e
+            logger.exception("team_registered: Courier send failed for %s", email)
         return results
 
     def team_owner_invited(
         self,
         *,
         email: str,
-        organizer_name: str,
-        tournament_name: str,
-        team_name: str,
-        invite_url: str,
+        club_name: str,
+        redirect_url: str,
     ) -> dict[str, str | Exception]:
         """Send invitation email. If the Courier template ID isn't configured,
         no-op (returns empty dict) so dev doesn't 500 — but logs a warning."""
         if not self.COURIER_TEMPLATE_TEAM_OWNER_INVITE:
             logger.warning("COURIER_TEMPLATE_TEAM_OWNER_INVITE not configured; skipping email for %s", email)
             return {}
+        if not self._tournaments_email_sender:
+            logger.warning("COURIER_TOURNAMENTS_AUTH_TOKEN not configured; skipping team_owner_invited email for %s", email)
+            return {}
         results: dict[str, str | Exception] = {}
         try:
             # Tournament invites go through the tournaments Courier workspace (separate auth token).
-            results["email"] = self._tournaments_email_sender.send_template(
+            request_id = self._tournaments_email_sender.send_template(
                 template_id=self.COURIER_TEMPLATE_TEAM_OWNER_INVITE,
                 to_email=email,
                 data={
-                    "organizerName": organizer_name,
-                    "tournamentName": tournament_name,
-                    "teamName": team_name,
-                    "inviteUrl": invite_url,
+                    "club_name": club_name,
+                    "redirect_url": redirect_url,
                 },
             )
+            results["email"] = request_id
         except Exception as e:
             results["email"] = e
+            logger.exception("team_owner_invited: Courier send failed for %s", email)
         return results
 
     def votation_opened(self, *, user_emails: list[str], month: str) -> str:
