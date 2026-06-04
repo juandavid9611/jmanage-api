@@ -15,3 +15,8 @@ class UpdateMembership(BaseModel):
     role: str | None = None
     status: str | None = None
     workspace_id: str | None = None
+
+
+class UpdateMembershipRole(BaseModel):
+    """Body for PATCH /memberships/{user_id}"""
+    role: str
