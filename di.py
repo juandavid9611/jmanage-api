@@ -50,9 +50,18 @@ def get_notification_repo() -> NotificationRepo:
 
 def get_notification_orchestator() -> Notifications:
     email_sender = CourierNotificationSender()
+    # Tournaments use a separate Courier workspace; falls back to the main sender if the env var is unset.
+    tournaments_token = os.environ.get("COURIER_TOURNAMENTS_AUTH_TOKEN")
+    tournaments_email_sender = (
+        CourierNotificationSender(auth_token=tournaments_token) if tournaments_token else email_sender
+    )
     repo = get_notification_repo()
     in_app_sender = DdbInAppSender(repo=repo, onesignal=OneSignalNotificationSender())
-    return Notifications(email_sender=email_sender, in_app_sender=in_app_sender)
+    return Notifications(
+        email_sender=email_sender,
+        in_app_sender=in_app_sender,
+        tournaments_email_sender=tournaments_email_sender,
+    )
 
 def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
     return CognitoIdentityProviderWrapper(

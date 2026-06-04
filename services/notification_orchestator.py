@@ -24,13 +24,20 @@ class Notifications:
     COURIER_TEMPLATE_USER_WELCOME = "H9MDTT27FTMKH7K3HCM1M4MDR23T"
     COURIER_TEMPLATE_CHRISTMAS_GREETING = "070Z3SZX8V4YAXMTAEWKCXW2NVEV"
     COURIER_TEMPLATE_TEAM_REGISTERED = "PH45YYJWG8MGEBMG02E4CDZSV256"
-    COURIER_TEMPLATE_TEAM_OWNER_INVITE: str | None = None  # set this to the Courier template ID once created
+    COURIER_TEMPLATE_TEAM_OWNER_INVITE: str | None = "RP0NPER4FXMH75N0Z0JKT0MY61B6"
     COURIER_TEMPLATE_ORDER_CREATED: str | None = None
     COURIER_TEMPLATE_ORDER_STATUS_CHANGED: str | None = None
 
-    def __init__(self, email_sender: EmailSender, in_app_sender: InAppSender) -> None:
+    def __init__(
+        self,
+        email_sender: EmailSender,
+        in_app_sender: InAppSender,
+        tournaments_email_sender: EmailSender | None = None,
+    ) -> None:
         self._email_sender = email_sender
         self._in_app_sender = in_app_sender
+        # Tournaments live in a separate Courier workspace; fall back to the main sender when not configured.
+        self._tournaments_email_sender = tournaments_email_sender or email_sender
         if _env() == "prod":
             self._admin_emails = ["loga9822@hotmail.com", "clubdeportivovittoria+pagos@gmail.com", "jd_rodrigueza@javeriana.edu.co"]
             self._admin_email_notifications_enabled = True
@@ -352,7 +359,8 @@ class Notifications:
             return {}
         results: dict[str, str | Exception] = {}
         try:
-            results["email"] = self._send_email(
+            # Tournament invites go through the tournaments Courier workspace (separate auth token).
+            results["email"] = self._tournaments_email_sender.send_template(
                 template_id=self.COURIER_TEMPLATE_TEAM_OWNER_INVITE,
                 to_email=email,
                 data={
