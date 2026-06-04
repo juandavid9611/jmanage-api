@@ -71,3 +71,7 @@ def notification_table():
 
 def votation_table():
     return dynamodb.Table(os.getenv("VOTATION_TABLE_NAME"))
+
+
+def tournament_invitation_table():
+    return dynamodb.Table(os.getenv("TOURNAMENT_INVITATION_TABLE_NAME"))

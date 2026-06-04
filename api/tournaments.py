@@ -62,6 +62,7 @@ from api.schemas.tournaments import (
 
 ADMIN = PermissionChecker(required_permissions=["admin"])
 ALL_ROLES = PermissionChecker(required_permissions=["admin", "user"])
+ALL_ROLES_INCL_TEAM_OWNER = PermissionChecker(required_permissions=["admin", "user", "team_owner"])
 
 
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
@@ -71,7 +72,7 @@ router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 # ║  1. TOURNAMENTS CRUD                                                ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("", dependencies=[Depends(ALL_ROLES)])
+@router.get("", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_tournaments(
     status: str | None = None,
     account_id: str = Depends(get_account_id),
@@ -89,7 +90,7 @@ async def create_tournament(
     return svc.create_tournament(body, account_id)
 
 
-@router.get("/{tournament_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_tournament(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -142,7 +143,7 @@ async def get_tournament_logo_upload_url(
 # ║  2. GROUPS                                                           ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/groups", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/groups", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_groups(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -220,7 +221,7 @@ async def remove_team_from_group(
     return {"removed": team_id}
 
 
-@router.get("/{tournament_id}/groups/{group_id}/standings", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/groups/{group_id}/standings", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def group_standings(
     tournament_id: str,
     group_id: str,
@@ -245,7 +246,7 @@ async def group_standings(
 # ║  3. TEAMS                                                           ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/teams", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/teams", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_teams(
     tournament_id: str,
     group_id: str | None = None,
@@ -269,7 +270,7 @@ async def create_team(
     return svc.create_team(tournament_id, body)
 
 
-@router.get("/{tournament_id}/teams/{team_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/teams/{team_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_team(
     tournament_id: str,
     team_id: str,
@@ -390,7 +391,7 @@ async def delete_team_document(
 # ║  4. PLAYERS                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/players", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/players", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_players(
     tournament_id: str,
     team_id: str | None = None,
@@ -419,7 +420,7 @@ async def create_player(
     return svc.create_player(tournament_id, team_id, body)
 
 
-@router.get("/{tournament_id}/players/{player_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/players/{player_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_player(
     tournament_id: str,
     player_id: str,
@@ -486,7 +487,7 @@ async def delete_player(
 # ║  5. MATCHES CRUD                                                     ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/matches", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/matches", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_matches(
     tournament_id: str,
     matchweek: int | None = None,
@@ -534,7 +535,7 @@ async def create_match(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{tournament_id}/matches/{match_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/matches/{match_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_match(
     tournament_id: str,
     match_id: str,
@@ -717,7 +718,7 @@ async def delete_event(
 # ║  8. STANDINGS                                                       ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/standings", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/standings", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def tournament_standings(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -740,7 +741,7 @@ async def tournament_standings(
 # ║  9. BRACKET                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/bracket", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/bracket", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_bracket(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -789,7 +790,7 @@ async def advance_winner(
 # ║  10. STATS                                                          ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/stats", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/stats", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def tournament_stats(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -805,7 +806,7 @@ async def tournament_stats(
     )
 
 
-@router.get("/{tournament_id}/top-scorers", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/top-scorers", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def top_scorers(
     tournament_id: str,
     limit: int = Query(50, ge=1, le=100),
@@ -815,6 +816,62 @@ async def top_scorers(
 ):
     _require_tournament(t_svc, tournament_id, account_id)
     return stats_svc.get_top_scorers(tournament_id, limit=limit)
+
+
+@router.get("/{tournament_id}/team-discipline", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
+async def team_discipline(
+    tournament_id: str,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    stats_svc: TournamentStatsService = Depends(get_tournament_stats_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    return stats_svc.get_team_discipline(tournament_id)
+
+
+@router.get(
+    "/{tournament_id}/teams/{team_id}/cards",
+    dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)],
+)
+async def team_cards(
+    tournament_id: str,
+    team_id: str,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    stats_svc: TournamentStatsService = Depends(get_tournament_stats_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    return stats_svc.get_team_cards(tournament_id, team_id)
+
+
+@router.post(
+    "/{tournament_id}:recompute-stats",
+    dependencies=[Depends(ADMIN)],
+)
+async def recompute_stats(
+    tournament_id: str,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+):
+    """Admin: rebuild materialized stats for a tournament from raw matches
+    and events. Use when DDB items are missing or out-of-sync (e.g., for
+    pre-materialization local data)."""
+    _require_tournament(t_svc, tournament_id, account_id)
+    from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
+    from repositories.tournament_match_repo_ddb import TournamentMatchRepo
+    from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
+    from repositories.tournament_repo_ddb import TournamentRepo
+    from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+    from services.tournament_aggregator import recompute_tournament as _recompute
+
+    return _recompute(
+        tournament_id,
+        match_repo=TournamentMatchRepo(),
+        event_repo=TournamentMatchEventRepo(),
+        team_repo=TournamentTeamRepo(),
+        player_repo=TournamentPlayerRepo(),
+        tournament_repo=TournamentRepo(),
+    )
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

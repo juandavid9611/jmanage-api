@@ -56,6 +56,7 @@ class UserService:
             if user:
                 # Attach workspace info
                 user["user_group"] = m.get("workspace_id") # Temporary for mapping
+                user["role"] = m.get("role")
                 items.append(user)
                 
         if not include_disabled:

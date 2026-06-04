@@ -1,5 +1,6 @@
 """Business logic for TournamentTeam management."""
 
+import logging
 import mimetypes
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from repositories.s3_adapter import S3Adapter
 from repositories.tournament_team_repo_ddb import TournamentTeamRepo
 from repositories.tournament_repo_ddb import TournamentRepo
 
+logger = logging.getLogger(__name__)
+
 
 class TournamentTeamService:
     def __init__(
@@ -18,11 +21,13 @@ class TournamentTeamService:
         tournament_repo: TournamentRepo | None = None,
         s3: S3Adapter | None = None,
         notifications=None,
+        invitation_svc=None,
     ):
         self.repo = repo
         self.tournament_repo = tournament_repo
         self.s3 = s3
         self.notifications = notifications
+        self._invitation_svc = invitation_svc
 
     def create_team(self, tournament_id: str, body: CreateTeam) -> dict[str, Any]:
         item = {
@@ -47,6 +52,7 @@ class TournamentTeamService:
         if self.tournament_repo:
             self.tournament_repo.increment_team_count(tournament_id)
         self._notify_team_registered(item, tournament_id)
+        self._trigger_invitation(item)
         return item
 
     def get_team(self, team_id: str) -> dict[str, Any] | None:
@@ -73,6 +79,8 @@ class TournamentTeamService:
         if not updates:
             return self._resolve_documents(self._resolve_logo(existing))
         updated = self.repo.update(team_id, updates)
+        if updated and updates.get("contact_email"):
+            self._trigger_invitation(updated)
         return self._resolve_documents(self._resolve_logo(updated)) if updated else None
 
     def delete_team(self, team_id: str) -> bool:
@@ -182,6 +190,40 @@ class TournamentTeamService:
             resolved[doc_type] = resolved_files
         item["documents"] = resolved
         return item
+
+    def _trigger_invitation(self, team: dict[str, Any]) -> None:
+        """Best-effort: call invitation service to create (or no-op if already pending).
+        Never raises — a Courier/DDB blip must not break the team-add flow."""
+        if not self._invitation_svc:
+            return
+        contact_email = (team.get("contact_email") or "").strip()
+        if not contact_email:
+            return
+        # Derive account_id from the tournament row (not stored on the team item).
+        account_id = None
+        tournament_id = team.get("tournament_id", "")
+        if self.tournament_repo and tournament_id:
+            tournament = self.tournament_repo.get(tournament_id)
+            account_id = (tournament or {}).get("account_id")
+        if not account_id:
+            logger.warning(
+                "Cannot trigger invitation for team %s: account_id could not be resolved",
+                team.get("id"),
+            )
+            return
+        try:
+            self._invitation_svc.create_for_team(
+                account_id=account_id,
+                tournament_id=tournament_id,
+                tournament_team_id=team["id"],
+                email=contact_email,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to create invitation for team %s (email=%s); team was saved successfully",
+                team.get("id"),
+                contact_email,
+            )
 
     def _notify_team_registered(self, team: dict[str, Any], tournament_id: str) -> None:
         if not self.notifications:

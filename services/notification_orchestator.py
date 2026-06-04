@@ -1,4 +1,6 @@
 
+import logging
+
 from api.schemas.calendar import PutCalendarEvent
 from repositories.notifications.ports import EmailSender
 from repositories.notifications.ports import InAppSender
@@ -6,6 +8,8 @@ from typing import Mapping, Any
 from utils.datetime_utils import format_datetime_pretty_es, parse_timestamp_to_datetime, try_parsing_date
 from utils.env_utils import _env
 from utils.slack_alerts import send_overdue_summary
+
+logger = logging.getLogger(__name__)
 
 
 class Notifications:
@@ -20,6 +24,7 @@ class Notifications:
     COURIER_TEMPLATE_USER_WELCOME = "H9MDTT27FTMKH7K3HCM1M4MDR23T"
     COURIER_TEMPLATE_CHRISTMAS_GREETING = "070Z3SZX8V4YAXMTAEWKCXW2NVEV"
     COURIER_TEMPLATE_TEAM_REGISTERED = "PH45YYJWG8MGEBMG02E4CDZSV256"
+    COURIER_TEMPLATE_TEAM_OWNER_INVITE: str | None = None  # set this to the Courier template ID once created
     COURIER_TEMPLATE_ORDER_CREATED: str | None = None
     COURIER_TEMPLATE_ORDER_STATUS_CHANGED: str | None = None
 
@@ -326,6 +331,36 @@ class Notifications:
                 template_id=self.COURIER_TEMPLATE_TEAM_REGISTERED,
                 to_email=email,
                 data={"club_name": club_name, "tournament_name": tournament_name},
+            )
+        except Exception as e:
+            results["email"] = e
+        return results
+
+    def team_owner_invited(
+        self,
+        *,
+        email: str,
+        organizer_name: str,
+        tournament_name: str,
+        team_name: str,
+        invite_url: str,
+    ) -> dict[str, str | Exception]:
+        """Send invitation email. If the Courier template ID isn't configured,
+        no-op (returns empty dict) so dev doesn't 500 — but logs a warning."""
+        if not self.COURIER_TEMPLATE_TEAM_OWNER_INVITE:
+            logger.warning("COURIER_TEMPLATE_TEAM_OWNER_INVITE not configured; skipping email for %s", email)
+            return {}
+        results: dict[str, str | Exception] = {}
+        try:
+            results["email"] = self._send_email(
+                template_id=self.COURIER_TEMPLATE_TEAM_OWNER_INVITE,
+                to_email=email,
+                data={
+                    "organizerName": organizer_name,
+                    "tournamentName": tournament_name,
+                    "teamName": team_name,
+                    "inviteUrl": invite_url,
+                },
             )
         except Exception as e:
             results["email"] = e
