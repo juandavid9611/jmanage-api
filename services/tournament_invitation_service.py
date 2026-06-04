@@ -11,6 +11,11 @@ INVITATION_TTL_DAYS = 14
 TOKEN_BYTES = 32  # 32-byte url-safe random ~ 43 chars
 
 
+class InvitationAuthenticationRequired(Exception):
+    """Anonymous accept attempt for an email that already has a Cognito user.
+    The client must retry with an id_token. The router maps this to HTTP 401."""
+
+
 class TournamentInvitationService:
     def __init__(
         self,
@@ -201,7 +206,9 @@ class TournamentInvitationService:
             if not password:
                 raise ValueError("Password required for new user")
             if self._users.get_by_email(inv["email"]):
-                raise ValueError("A user with this email already exists; sign in first and retry")
+                raise InvitationAuthenticationRequired(
+                    "Esta dirección de correo ya tiene una cuenta. Inicia sesión y vuelve a aceptar la invitación."
+                )
             # Cognito requires a `name` attribute; derive from email local-part since
             # the invite form only collects credentials. Users can update later.
             resolved_name = inv["email"].split("@")[0]

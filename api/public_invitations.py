@@ -8,7 +8,10 @@ from starlette.status import HTTP_401_UNAUTHORIZED
 
 from JWTBearer import JWTAuthorizationCredentials
 from di import get_tournament_invitation_service
-from services.tournament_invitation_service import TournamentInvitationService
+from services.tournament_invitation_service import (
+    InvitationAuthenticationRequired,
+    TournamentInvitationService,
+)
 from api.schemas.invitations import (
     AcceptInvitationRequest,
     AcceptInvitationResponse,
@@ -106,6 +109,14 @@ def accept_invite(
             password=body.password,
             authenticated_user_id=user_id,
             authenticated_email=user_email,
+        )
+    except InvitationAuthenticationRequired as exc:
+        # Tell the client the call is well-formed but needs auth. WWW-Authenticate
+        # is a hint that a Bearer id_token is expected; the frontend ignores it.
+        raise HTTPException(
+            status_code=401,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
