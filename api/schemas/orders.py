@@ -12,6 +12,18 @@ class CamelModel(BaseModel):
     }
 
 
+class CheckMark(CamelModel):
+    checked: bool
+    checked_at: datetime
+    checked_by: str
+    note: Optional[str] = None
+
+
+class OrderCheckUpdate(CamelModel):
+    checked: bool
+    note: Optional[str] = None
+
+
 class OrderItem(CamelModel):
     id: str
     sku: str
@@ -76,6 +88,8 @@ class Order(CamelModel):
     payment: Payment
     status: str
     payment_request_id: Optional[str] = None
+    provider_check: Optional[CheckMark] = None
+    delivery_check: Optional[CheckMark] = None
 
 
 class OrderCreate(CamelModel):

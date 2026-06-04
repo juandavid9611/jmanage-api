@@ -1,9 +1,9 @@
 """Business logic for MatchEvent management.
 
-Validates player-team relationships and provides event CRUD.
-Stat recomputation happens on read in the Player service.
-When a goal-related event is created or deleted, the parent match
-score is automatically recomputed so live scores stay in sync.
+Each event mutation (create/update/delete) applies a delta to the
+materialized stats on TournamentPlayer, TournamentTeam, and Tournament
+items via the aggregator. The parent match score is also auto-synced
+for goal-type events so the score stays correct.
 """
 
 from uuid import uuid4
@@ -13,6 +13,17 @@ from typing import Any
 from api.schemas.tournaments import CreateMatchEvent, PatchMatchEvent
 from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
 from repositories.tournament_match_repo_ddb import TournamentMatchRepo
+from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
+from repositories.tournament_repo_ddb import TournamentRepo
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from services.tournament_aggregator import (
+    apply_delta,
+    default_player_stats,
+    default_team_stats,
+    default_tournament_stats,
+    event_delta,
+    update_average_goals_per_match,
+)
 
 _GOAL_TYPES = {"goal", "own_goal", "penalty_scored"}
 
@@ -22,12 +33,17 @@ class TournamentMatchEventService:
         self,
         repo: TournamentMatchEventRepo,
         match_repo: TournamentMatchRepo | None = None,
+        team_repo: TournamentTeamRepo | None = None,
+        player_repo: TournamentPlayerRepo | None = None,
+        tournament_repo: TournamentRepo | None = None,
     ):
         self.repo = repo
         self.match_repo = match_repo
+        self.team_repo = team_repo
+        self.player_repo = player_repo
+        self.tournament_repo = tournament_repo
 
     def create_event(self, match_id: str, body: CreateMatchEvent) -> dict[str, Any]:
-        # Determine next event_index if not provided
         event_index = body.event_index
         if event_index is None:
             existing = self.repo.list_by_match(match_id)
@@ -47,7 +63,8 @@ class TournamentMatchEventService:
         }
         self.repo.put(item)
 
-        # Auto-sync match score when a goal-related event is added
+        self._apply_event(item, sign=+1)
+
         if body.type.value in _GOAL_TYPES:
             self._sync_match_score(match_id)
 
@@ -64,15 +81,18 @@ class TournamentMatchEventService:
         if not existing:
             return None
         updates = body.dict(exclude_unset=True, exclude_none=True)
-        if "type" in updates:
-            updates["type"] = updates["type"]  # already str
         if not updates:
             return existing
-        result = self.repo.update(event_id, updates)
 
-        # If the type changed (e.g. goal → yellow_card or vice versa), re-sync score
+        # Reverse the old event's contribution before persisting the change,
+        # then apply the new one.
+        self._apply_event(existing, sign=-1)
+        result = self.repo.update(event_id, updates)
+        if result:
+            self._apply_event(result, sign=+1)
+
         old_is_goal = existing.get("type", "") in _GOAL_TYPES
-        new_is_goal = updates.get("type", existing.get("type", "")) in _GOAL_TYPES
+        new_is_goal = (result or existing).get("type", "") in _GOAL_TYPES
         if old_is_goal or new_is_goal:
             self._sync_match_score(existing["match_id"])
 
@@ -82,13 +102,62 @@ class TournamentMatchEventService:
         existing = self.repo.get(event_id)
         if not existing:
             return False
+
+        self._apply_event(existing, sign=-1)
         self.repo.delete(event_id)
 
-        # Re-sync match score when a goal-related event is removed
         if existing.get("type", "") in _GOAL_TYPES:
             self._sync_match_score(existing["match_id"])
 
         return True
+
+    # ── Aggregator hook ──────────────────────────────────────────────
+
+    def _apply_event(self, event: dict[str, Any], sign: int) -> None:
+        """Apply (or reverse) this event's contribution to the materialized
+        stats on Player / Team / Tournament items. No-ops if the relevant
+        repos weren't injected (e.g., older test wiring)."""
+        d = event_delta(event, sign=sign)
+
+        match = None
+        tournament_id = None
+        if self.match_repo and event.get("match_id"):
+            match = self.match_repo.get(event["match_id"])
+            tournament_id = (match or {}).get("tournament_id")
+
+        if self.player_repo and d["player_id"]:
+            current = (self.player_repo.get(d["player_id"]) or {}).get(
+                "stats"
+            ) or default_player_stats()
+            self.player_repo.update_stats(
+                d["player_id"], apply_delta(current, d["player_delta"])
+            )
+
+        if self.player_repo and d["assist_player_id"]:
+            current = (self.player_repo.get(d["assist_player_id"]) or {}).get(
+                "stats"
+            ) or default_player_stats()
+            self.player_repo.update_stats(
+                d["assist_player_id"],
+                apply_delta(current, d["assist_player_delta"]),
+            )
+
+        if self.team_repo and d["team_id"]:
+            current = (self.team_repo.get(d["team_id"]) or {}).get(
+                "stats"
+            ) or default_team_stats()
+            self.team_repo.update_stats(
+                d["team_id"], apply_delta(current, d["team_delta"])
+            )
+
+        if self.tournament_repo and tournament_id:
+            current = (self.tournament_repo.get(tournament_id) or {}).get(
+                "stats"
+            ) or default_tournament_stats()
+            merged = apply_delta(current, d["tournament_delta"])
+            self.tournament_repo.update_stats(
+                tournament_id, update_average_goals_per_match(merged)
+            )
 
     # ── Helpers ──────────────────────────────────────────────────────
 
@@ -116,7 +185,6 @@ class TournamentMatchEventService:
                 elif team_id == away_team_id:
                     score_away += 1
             elif etype == "own_goal":
-                # Own goal counts for the OTHER team
                 if team_id == home_team_id:
                     score_away += 1
                 elif team_id == away_team_id:

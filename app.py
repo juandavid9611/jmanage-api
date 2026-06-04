@@ -35,6 +35,7 @@ def create_app() -> FastAPI:
     origins = [
         "http://localhost",
         "http://localhost:3031",
+        "http://localhost:3041",
         "http://localhost:3030",
         "https://dev-jmanage-web.vercel.app",
         "https://sportsmanage.app",

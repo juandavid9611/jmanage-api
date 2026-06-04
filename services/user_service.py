@@ -437,8 +437,12 @@ class UserService:
         cog_users_map = {user["Username"]: user for user in cog_users}
         users = []
         for db_user in db_users:
-            cog_user = cog_users_map[db_user["id"]]
-            db_user["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
+            # A DB user/membership can exist without a Cognito account (e.g. invited
+            # but not yet signed up, or removed from Cognito out-of-band). Treat a
+            # missing Cognito entry as not-yet-confirmed instead of crashing the whole
+            # listing — and therefore any endpoint that lists users (calendar, etc.).
+            cog_user = cog_users_map.get(db_user["id"])
+            db_user["confirmation_status"] = UserConfirmationStatus.CONFIRMED if cog_user and cog_user["UserStatus"] == "CONFIRMED" else UserConfirmationStatus.PENDING
             user = self._map_user(db_user)
             users.append(user)
         return users
