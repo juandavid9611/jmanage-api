@@ -44,7 +44,7 @@ async def create_account(
     return account
 
 
-@router.get("/my-accounts", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+@router.get("/my-accounts", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user', 'team_owner']))])
 async def get_my_accounts(
     user: dict = Depends(get_current_user),
     svc: AccountService = Depends(get_account_service)

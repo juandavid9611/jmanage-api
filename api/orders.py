@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
-from api.schemas.orders import Order, OrderCreate, OrderUpdate
+from api.schemas.orders import Order, OrderCreate, OrderUpdate, OrderCheckUpdate
 from services.order_service import OrderService
 from di import get_order_service
-from auth import PermissionChecker, get_account_id
+from auth import PermissionChecker, get_account_id, get_current_user
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -36,12 +36,51 @@ async def create_order(
 
 @router.put("/{order_id}", response_model=Order, dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))])
 async def update_order(
-    order_id: str, 
-    payload: OrderUpdate, 
+    order_id: str,
+    payload: OrderUpdate,
     account_id: str = Depends(get_account_id),
     svc: OrderService = Depends(get_order_service)
 ):
-    order = svc.update_order(order_id, account_id, payload)
+    try:
+        order = svc.update_order(order_id, account_id, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+@router.post(
+    "/{order_id}/provider-check",
+    response_model=Order,
+    dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))],
+)
+async def set_provider_check(
+    order_id: str,
+    payload: OrderCheckUpdate,
+    user: dict = Depends(get_current_user),
+    account_id: str = Depends(get_account_id),
+    svc: OrderService = Depends(get_order_service),
+):
+    order = svc.set_provider_check(order_id, account_id, user["sub"], payload)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+@router.post(
+    "/{order_id}/delivery-check",
+    response_model=Order,
+    dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))],
+)
+async def set_delivery_check(
+    order_id: str,
+    payload: OrderCheckUpdate,
+    user: dict = Depends(get_current_user),
+    account_id: str = Depends(get_account_id),
+    svc: OrderService = Depends(get_order_service),
+):
+    order = svc.set_delivery_check(order_id, account_id, user["sub"], payload)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order

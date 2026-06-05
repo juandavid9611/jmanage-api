@@ -15,7 +15,7 @@ Endpoint groups:
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 
-from auth import PermissionChecker, get_account_id, get_current_user
+from auth import PermissionChecker, get_account_id, get_account_role, get_current_user
 from di import (
     get_tournament_service,
     get_tournament_team_service,
@@ -60,8 +60,10 @@ from api.schemas.tournaments import (
 )
 
 
-ADMIN = PermissionChecker(required_permissions=["admin"])
+ADMIN = PermissionChecker(required_permissions=["admin", "user"])
 ALL_ROLES = PermissionChecker(required_permissions=["admin", "user"])
+ALL_ROLES_INCL_TEAM_OWNER = PermissionChecker(required_permissions=["admin", "user", "team_owner"])
+ADMIN_OR_TEAM_OWNER = PermissionChecker(required_permissions=["admin", "team_owner"])
 
 
 router = APIRouter(prefix="/tournaments", tags=["tournaments"])
@@ -71,7 +73,7 @@ router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 # ║  1. TOURNAMENTS CRUD                                                ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("", dependencies=[Depends(ALL_ROLES)])
+@router.get("", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_tournaments(
     status: str | None = None,
     account_id: str = Depends(get_account_id),
@@ -89,7 +91,7 @@ async def create_tournament(
     return svc.create_tournament(body, account_id)
 
 
-@router.get("/{tournament_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_tournament(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -142,7 +144,7 @@ async def get_tournament_logo_upload_url(
 # ║  2. GROUPS                                                           ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/groups", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/groups", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_groups(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -220,7 +222,7 @@ async def remove_team_from_group(
     return {"removed": team_id}
 
 
-@router.get("/{tournament_id}/groups/{group_id}/standings", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/groups/{group_id}/standings", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def group_standings(
     tournament_id: str,
     group_id: str,
@@ -245,7 +247,7 @@ async def group_standings(
 # ║  3. TEAMS                                                           ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/teams", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/teams", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_teams(
     tournament_id: str,
     group_id: str | None = None,
@@ -269,7 +271,7 @@ async def create_team(
     return svc.create_team(tournament_id, body)
 
 
-@router.get("/{tournament_id}/teams/{team_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/teams/{team_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_team(
     tournament_id: str,
     team_id: str,
@@ -390,7 +392,7 @@ async def delete_team_document(
 # ║  4. PLAYERS                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/players", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/players", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_players(
     tournament_id: str,
     team_id: str | None = None,
@@ -403,12 +405,14 @@ async def list_players(
     return svc.list_players(tournament_id, team_id=team_id, sort_by=sort)
 
 
-@router.post("/{tournament_id}/teams/{team_id}/players", dependencies=[Depends(ADMIN)])
+@router.post("/{tournament_id}/teams/{team_id}/players", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def create_player(
     tournament_id: str,
     team_id: str,
     body: CreatePlayer,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
@@ -416,10 +420,16 @@ async def create_player(
     _require_tournament(t_svc, tournament_id, account_id)
     if not team_svc.belongs_to_tournament(team_id, tournament_id):
         raise HTTPException(status_code=404, detail="Team not found in tournament")
-    return svc.create_player(tournament_id, team_id, body)
+    try:
+        return svc.create_player(
+            tournament_id, team_id, body,
+            acting_user_id=user["sub"], acting_role=account_role,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
-@router.get("/{tournament_id}/players/{player_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/players/{player_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_player(
     tournament_id: str,
     player_id: str,
@@ -434,12 +444,14 @@ async def get_player(
     return item
 
 
-@router.patch("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN)])
+@router.patch("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def update_player(
     tournament_id: str,
     player_id: str,
     body: PatchPlayer,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
@@ -447,15 +459,23 @@ async def update_player(
     existing = svc.get_player(player_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
-    return svc.update_player(player_id, body)
+    try:
+        return svc.update_player(
+            player_id, body,
+            acting_user_id=user["sub"], acting_role=account_role,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
-@router.post("/{tournament_id}/players/{player_id}/avatar-url", dependencies=[Depends(ADMIN)])
+@router.post("/{tournament_id}/players/{player_id}/avatar-url", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def get_player_avatar_upload_url(
     tournament_id: str,
     player_id: str,
     body: PlayerAvatarRequest,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
@@ -463,14 +483,22 @@ async def get_player_avatar_upload_url(
     existing = svc.get_player(player_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
-    return svc.generate_avatar_upload_url(player_id, account_id, body.filename, body.content_type)
+    try:
+        return svc.generate_avatar_upload_url(
+            player_id, account_id, body.filename, body.content_type,
+            acting_user_id=user["sub"], acting_role=account_role,
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
-@router.delete("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN)])
+@router.delete("/{tournament_id}/players/{player_id}", dependencies=[Depends(ADMIN_OR_TEAM_OWNER)])
 async def delete_player(
     tournament_id: str,
     player_id: str,
     account_id: str = Depends(get_account_id),
+    user: dict = Depends(get_current_user),
+    account_role: str = Depends(get_account_role),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
@@ -478,7 +506,10 @@ async def delete_player(
     existing = svc.get_player(player_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Player not found")
-    svc.delete_player(player_id)
+    try:
+        svc.delete_player(player_id, acting_user_id=user["sub"], acting_role=account_role)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     return {"deleted": player_id}
 
 
@@ -486,7 +517,7 @@ async def delete_player(
 # ║  5. MATCHES CRUD                                                     ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/matches", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/matches", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def list_matches(
     tournament_id: str,
     matchweek: int | None = None,
@@ -534,7 +565,7 @@ async def create_match(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{tournament_id}/matches/{match_id}", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/matches/{match_id}", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_match(
     tournament_id: str,
     match_id: str,
@@ -717,7 +748,7 @@ async def delete_event(
 # ║  8. STANDINGS                                                       ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/standings", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/standings", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def tournament_standings(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -740,7 +771,7 @@ async def tournament_standings(
 # ║  9. BRACKET                                                         ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/bracket", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/bracket", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def get_bracket(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -789,7 +820,7 @@ async def advance_winner(
 # ║  10. STATS                                                          ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
-@router.get("/{tournament_id}/stats", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/stats", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def tournament_stats(
     tournament_id: str,
     account_id: str = Depends(get_account_id),
@@ -805,7 +836,7 @@ async def tournament_stats(
     )
 
 
-@router.get("/{tournament_id}/top-scorers", dependencies=[Depends(ALL_ROLES)])
+@router.get("/{tournament_id}/top-scorers", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
 async def top_scorers(
     tournament_id: str,
     limit: int = Query(50, ge=1, le=100),
@@ -815,6 +846,62 @@ async def top_scorers(
 ):
     _require_tournament(t_svc, tournament_id, account_id)
     return stats_svc.get_top_scorers(tournament_id, limit=limit)
+
+
+@router.get("/{tournament_id}/team-discipline", dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)])
+async def team_discipline(
+    tournament_id: str,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    stats_svc: TournamentStatsService = Depends(get_tournament_stats_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    return stats_svc.get_team_discipline(tournament_id)
+
+
+@router.get(
+    "/{tournament_id}/teams/{team_id}/cards",
+    dependencies=[Depends(ALL_ROLES_INCL_TEAM_OWNER)],
+)
+async def team_cards(
+    tournament_id: str,
+    team_id: str,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    stats_svc: TournamentStatsService = Depends(get_tournament_stats_service),
+):
+    _require_tournament(t_svc, tournament_id, account_id)
+    return stats_svc.get_team_cards(tournament_id, team_id)
+
+
+@router.post(
+    "/{tournament_id}:recompute-stats",
+    dependencies=[Depends(ADMIN)],
+)
+async def recompute_stats(
+    tournament_id: str,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+):
+    """Admin: rebuild materialized stats for a tournament from raw matches
+    and events. Use when DDB items are missing or out-of-sync (e.g., for
+    pre-materialization local data)."""
+    _require_tournament(t_svc, tournament_id, account_id)
+    from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
+    from repositories.tournament_match_repo_ddb import TournamentMatchRepo
+    from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
+    from repositories.tournament_repo_ddb import TournamentRepo
+    from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+    from services.tournament_aggregator import recompute_tournament as _recompute
+
+    return _recompute(
+        tournament_id,
+        match_repo=TournamentMatchRepo(),
+        event_repo=TournamentMatchEventRepo(),
+        team_repo=TournamentTeamRepo(),
+        player_repo=TournamentPlayerRepo(),
+        tournament_repo=TournamentRepo(),
+    )
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

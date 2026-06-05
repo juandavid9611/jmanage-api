@@ -87,8 +87,6 @@ def send_slack_alert(title: str, detail_md: str = "", stack: str = "", level: st
     level: info | warning | error | critical
     """
     if not SLACK_WEBHOOK_URL:
-        # Evita romper producción si olvidaste la var de entorno
-        print("[slack_alerts] SLACK_WEBHOOK_URL not set. Title:", title)
         return
 
     icon = {

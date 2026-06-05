@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from repositories.order_repo_ddb import OrderRepo
 from services.notification_orchestator import Notifications
 from services.payment_request_service import PaymentRequestService
-from api.schemas.orders import Order, OrderCreate, OrderUpdate
+from api.schemas.orders import Order, OrderCreate, OrderUpdate, OrderCheckUpdate
 from api.schemas.payments import BulkPutPaymentRequest
 
 
@@ -19,6 +19,16 @@ ORDER_EVENT_TITLES = {
     "payment_canceled": "Pago cancelado",
     "payment_pending": "Pago pendiente",
     "order_status_changed": "Orden actualizada",
+    "provider_check_on": "Pedido al proveedor confirmado",
+    "provider_check_off": "Pedido al proveedor revertido",
+    "delivery_check_on": "Entrega confirmada",
+    "delivery_check_off": "Entrega revertida",
+}
+
+
+CHECK_FIELDS = {
+    "provider": "provider_check",
+    "delivery": "delivery_check",
 }
 
 
@@ -85,6 +95,15 @@ class OrderService:
         existing = self.repo.get_by_id(order_id, account_id)
         if not existing:
             return None
+
+        if payload.status == "completed" and existing.get("status") != "completed":
+            provider = existing.get("provider_check") or {}
+            delivery = existing.get("delivery_check") or {}
+            if not (provider.get("checked") and delivery.get("checked")):
+                raise ValueError(
+                    "Cannot mark order as completed: both provider order and delivery checks must be confirmed."
+                )
+
         data = payload.model_dump(exclude_unset=True)
         item = self.repo.update(order_id, account_id, data)
         if not item:
@@ -115,6 +134,51 @@ class OrderService:
 
     def delete_order(self, order_id: str, account_id: str) -> bool:
         return self.repo.delete(order_id, account_id)
+
+    def set_provider_check(
+        self, order_id: str, account_id: str, user_id: str, payload: OrderCheckUpdate
+    ) -> Optional[Order]:
+        return self._set_check(order_id, account_id, user_id, "provider", payload)
+
+    def set_delivery_check(
+        self, order_id: str, account_id: str, user_id: str, payload: OrderCheckUpdate
+    ) -> Optional[Order]:
+        return self._set_check(order_id, account_id, user_id, "delivery", payload)
+
+    def _set_check(
+        self,
+        order_id: str,
+        account_id: str,
+        user_id: str,
+        kind: str,
+        payload: OrderCheckUpdate,
+    ) -> Optional[Order]:
+        field = CHECK_FIELDS[kind]
+        existing = self.repo.get_by_id(order_id, account_id)
+        if not existing:
+            return None
+
+        previous = (existing.get(field) or {}).get("checked", False)
+        if previous == payload.checked:
+            # Idempotent: no state change, no event, return current state.
+            return Order.model_validate(existing)
+
+        check_value = {
+            "checked": payload.checked,
+            "checked_at": _now_iso(),
+            "checked_by": user_id,
+            "note": payload.note,
+        }
+        self.repo.set_check(order_id, account_id, field, check_value)
+
+        event_type = f"{kind}_check_{'on' if payload.checked else 'off'}"
+        meta = {"by": user_id}
+        if payload.note:
+            meta["note"] = payload.note
+        self.repo.append_event(order_id, account_id, build_event(event_type, meta=meta))
+
+        refreshed = self.repo.get_by_id(order_id, account_id) or existing
+        return Order.model_validate(refreshed)
 
     def _create_payment_request_for_order(self, order_item: dict, account_id: str) -> Optional[str]:
         customer = order_item.get("customer") or {}

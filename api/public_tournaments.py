@@ -14,10 +14,14 @@ from di import (
     get_standings_service,
     get_tournament_stats_service,
     get_match_service,
+    get_match_event_service,
+    get_tournament_player_service,
 )
 from services.standings_service import StandingsService
 from services.tournament_service import TournamentService
 from services.tournament_match_service import TournamentMatchService
+from services.tournament_match_event_service import TournamentMatchEventService
+from services.tournament_player_service import TournamentPlayerService
 from services.tournament_stats_service import TournamentStatsService
 from services.tournament_team_service import TournamentTeamService
 
@@ -130,3 +134,45 @@ async def get_public_top_scorers(
 ):
     _get_public_or_404(tournament_id, svc)
     return stats_svc.get_top_scorers(tournament_id)
+
+
+# ── Bracket ────────────────────────────────────────────────────────────
+
+@router.get("/{tournament_id}/bracket")
+async def get_public_bracket(
+    tournament_id: str,
+    svc: TournamentService = Depends(get_tournament_service),
+):
+    t = _get_public_or_404(tournament_id, svc)
+    return t.get("bracket") or {}
+
+
+# ── Players ────────────────────────────────────────────────────────────
+
+@router.get("/{tournament_id}/players")
+async def get_public_players(
+    tournament_id: str,
+    team_id: Optional[str] = Query(None),
+    svc: TournamentService = Depends(get_tournament_service),
+    player_svc: TournamentPlayerService = Depends(get_tournament_player_service),
+):
+    _get_public_or_404(tournament_id, svc)
+    return player_svc.list_players(tournament_id, team_id=team_id)
+
+
+# ── Match detail (single match with events) ────────────────────────────
+
+@router.get("/{tournament_id}/matches/{match_id}")
+async def get_public_match(
+    tournament_id: str,
+    match_id: str,
+    svc: TournamentService = Depends(get_tournament_service),
+    match_svc: TournamentMatchService = Depends(get_match_service),
+    ev_svc: TournamentMatchEventService = Depends(get_match_event_service),
+):
+    _get_public_or_404(tournament_id, svc)
+    item = match_svc.get_match(match_id)
+    if not item or item.get("tournament_id") != tournament_id:
+        raise HTTPException(status_code=404, detail="Match not found")
+    item["events"] = ev_svc.list_events(match_id)
+    return item

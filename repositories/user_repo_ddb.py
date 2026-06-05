@@ -81,8 +81,24 @@ class UserRepo:
 
     def delete(self, user_id: str, account_id: str) -> None:
         """Delete user
-        
+
         Note: account_id parameter is kept for API compatibility but not used.
         Access control is enforced at the service/API layer via memberships.
         """
         self._table.delete_item(Key={"id": user_id})
+
+    def create(self, item: dict[str, Any]) -> None:
+        """Create a new user record."""
+        self._table.put_item(Item=item)
+
+    def get_by_email(self, email: str) -> dict[str, Any] | None:
+        """Lookup user by email via scan-and-filter.
+
+        TODO: Replace with a proper email GSI for production scale — full-table
+        scans are acceptable at current user count but will degrade as the table grows.
+        """
+        items = _scan_all(
+            self._table,
+            FilterExpression=Attr("email").eq(email),
+        )
+        return items[0] if items else None

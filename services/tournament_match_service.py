@@ -8,6 +8,15 @@ from itertools import combinations
 from api.schemas.tournaments import CreateMatch, PatchMatch, GenerateScheduleRequest, BulkMatchesRequest
 from repositories.tournament_match_repo_ddb import TournamentMatchRepo
 from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
+from repositories.tournament_repo_ddb import TournamentRepo
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from services.tournament_aggregator import (
+    apply_delta,
+    default_team_stats,
+    default_tournament_stats,
+    match_outcome_delta,
+    update_average_goals_per_match,
+)
 
 
 # Valid status transitions
@@ -20,9 +29,17 @@ _STATUS_TRANSITIONS = {
 
 
 class TournamentMatchService:
-    def __init__(self, repo: TournamentMatchRepo, event_repo: TournamentMatchEventRepo | None = None):
+    def __init__(
+        self,
+        repo: TournamentMatchRepo,
+        event_repo: TournamentMatchEventRepo | None = None,
+        team_repo: TournamentTeamRepo | None = None,
+        tournament_repo: TournamentRepo | None = None,
+    ):
         self.repo = repo
         self.event_repo = event_repo
+        self.team_repo = team_repo
+        self.tournament_repo = tournament_repo
 
     # ── CRUD ─────────────────────────────────────────────────────────
 
@@ -85,14 +102,15 @@ class TournamentMatchService:
             return None
         updates = body.dict(exclude_unset=True, exclude_none=True)
 
+        old_status = existing.get("status", "scheduled")
+
         # Validate status transitions
         if "status" in updates:
-            current_status = existing.get("status", "scheduled")
             new_status = updates["status"]
-            allowed = _STATUS_TRANSITIONS.get(current_status, set())
+            allowed = _STATUS_TRANSITIONS.get(old_status, set())
             if new_status not in allowed:
                 raise ValueError(
-                    f"Cannot transition from '{current_status}' to '{new_status}'. "
+                    f"Cannot transition from '{old_status}' to '{new_status}'. "
                     f"Allowed: {allowed}"
                 )
 
@@ -111,7 +129,21 @@ class TournamentMatchService:
 
         if not updates:
             return existing
-        return self.repo.update(match_id, updates)
+
+        result = self.repo.update(match_id, updates)
+
+        # Propagate to materialized stats if the match crossed the finished
+        # boundary. Use the freshly-persisted row so scores are current.
+        new_status = (result or existing).get("status", old_status)
+        was_finished = old_status == "finished"
+        is_finished = new_status == "finished"
+        if was_finished != is_finished:
+            self._apply_match_outcome(
+                existing if was_finished else (result or existing),
+                sign=-1 if was_finished else +1,
+            )
+
+        return result
 
     def _compute_score(self, match_id: str, home_team_id: str, away_team_id: str) -> tuple[int, int]:
         """Compute score from match events.
@@ -146,8 +178,36 @@ class TournamentMatchService:
         existing = self.repo.get(match_id)
         if not existing:
             return False
+        if existing.get("status") == "finished":
+            self._apply_match_outcome(existing, sign=-1)
         self.repo.delete(match_id)
         return True
+
+    # ── Aggregator hook ──────────────────────────────────────────────
+
+    def _apply_match_outcome(self, match: dict[str, Any], sign: int) -> None:
+        """Apply (or reverse) this match's outcome contribution to the
+        materialized stats on the two teams + the tournament item."""
+        if not (self.team_repo and self.tournament_repo):
+            return
+        tournament_id = match.get("tournament_id")
+        if not tournament_id:
+            return
+        tournament = self.tournament_repo.get(tournament_id) or {}
+        rules = tournament.get("rules") or {}
+
+        d = match_outcome_delta(match, rules, sign=sign)
+
+        for team_key, delta_key in (("home_team_id", "home_delta"), ("away_team_id", "away_delta")):
+            team_id = d.get(team_key)
+            if not team_id:
+                continue
+            current = (self.team_repo.get(team_id) or {}).get("stats") or default_team_stats()
+            self.team_repo.update_stats(team_id, apply_delta(current, d[delta_key]))
+
+        t_current = tournament.get("stats") or default_tournament_stats()
+        merged = apply_delta(t_current, d["tournament_delta"])
+        self.tournament_repo.update_stats(tournament_id, update_average_goals_per_match(merged))
 
     # ── Fixture Generation ───────────────────────────────────────────
 

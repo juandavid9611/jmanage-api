@@ -63,6 +63,8 @@ class OrderRepo:
             "payment": _dump(payload.get("payment")),
             "status": "pending",
             "payment_request_id": None,
+            "provider_check": None,
+            "delivery_check": None,
         }
 
         self.table.put_item(Item=item)
@@ -124,6 +126,28 @@ class OrderRepo:
             ExpressionAttributeValues={":prid": payment_request_id},
         )
         current["payment_request_id"] = payment_request_id
+        return current
+
+    def set_check(
+        self,
+        order_id: str,
+        account_id: str,
+        field: str,
+        value: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Set an admin check field (provider_check / delivery_check) atomically."""
+        if field not in ("provider_check", "delivery_check"):
+            raise ValueError(f"Unsupported check field: {field}")
+        current = self.get_by_id(order_id, account_id)
+        if not current:
+            return None
+        self.table.update_item(
+            Key={"id": order_id},
+            UpdateExpression=f"SET {field} = :val",
+            ConditionExpression=Attr("account_id").eq(account_id),
+            ExpressionAttributeValues={":val": value},
+        )
+        current[field] = value
         return current
 
     def append_event(

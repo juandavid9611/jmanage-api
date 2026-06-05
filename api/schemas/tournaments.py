@@ -131,6 +131,7 @@ class CreateTeam(BaseModel):
     group_id: str | None = None
     manager_name: str | None = None
     contact_email: str | None = None
+    contact_phone: str | None = None
     primary_color: str | None = None
     rules_accepted: bool = False
 
@@ -142,6 +143,7 @@ class PatchTeam(BaseModel):
     seed: int | None = None
     manager_name: str | None = None
     contact_email: str | None = None
+    contact_phone: str | None = None
     primary_color: str | None = None
     rules_accepted: bool | None = None
 
@@ -262,3 +264,36 @@ class BracketOverride(BaseModel):
     team1_id: str | None = None
     team2_id: str | None = None
     match_id: str | None = None
+
+
+# ── Team Discipline (per-team card aggregates with match drill-down) ────
+
+class TeamDisciplineCard(BaseModel):
+    event_id: str | None = None
+    type: str  # yellow_card | red_card | second_yellow
+    minute: int
+    match_id: str
+    matchweek: int | None = None
+    match_label: str | None = None  # "VIT 1·0 CLA"
+    match_date: str | None = None
+    opponent_team_id: str | None = None
+    opponent_name: str | None = None
+
+
+class TeamDisciplinePlayer(BaseModel):
+    player_id: str
+    name: str
+    number: int | None = None
+    yellow_cards: int
+    red_cards: int  # red_card events + second_yellow events (sending-offs)
+    cards: list[TeamDisciplineCard]
+
+
+class TeamDisciplineRow(BaseModel):
+    team_id: str
+    name: str
+    short_name: str | None = None
+    yellow_cards: int
+    red_cards: int  # red_card events + second_yellow events
+    total_cards: int
+    players: list[TeamDisciplinePlayer]

@@ -1,4 +1,6 @@
 
+import logging
+
 from api.schemas.calendar import PutCalendarEvent
 from repositories.notifications.ports import EmailSender
 from repositories.notifications.ports import InAppSender
@@ -6,6 +8,8 @@ from typing import Mapping, Any
 from utils.datetime_utils import format_datetime_pretty_es, parse_timestamp_to_datetime, try_parsing_date
 from utils.env_utils import _env
 from utils.slack_alerts import send_overdue_summary
+
+logger = logging.getLogger(__name__)
 
 
 class Notifications:
@@ -20,12 +24,21 @@ class Notifications:
     COURIER_TEMPLATE_USER_WELCOME = "H9MDTT27FTMKH7K3HCM1M4MDR23T"
     COURIER_TEMPLATE_CHRISTMAS_GREETING = "070Z3SZX8V4YAXMTAEWKCXW2NVEV"
     COURIER_TEMPLATE_TEAM_REGISTERED = "PH45YYJWG8MGEBMG02E4CDZSV256"
+    COURIER_TEMPLATE_TEAM_OWNER_INVITE: str | None = "RP0NPER4FXMH75N0Z0JKT0MY61B6"
     COURIER_TEMPLATE_ORDER_CREATED: str | None = None
     COURIER_TEMPLATE_ORDER_STATUS_CHANGED: str | None = None
 
-    def __init__(self, email_sender: EmailSender, in_app_sender: InAppSender) -> None:
+    def __init__(
+        self,
+        email_sender: EmailSender,
+        in_app_sender: InAppSender,
+        tournaments_email_sender: EmailSender | None = None,
+    ) -> None:
         self._email_sender = email_sender
         self._in_app_sender = in_app_sender
+        # Tournaments live in a separate Courier workspace. No fallback — if it's
+        # unconfigured, tournament methods skip the send instead of misrouting it.
+        self._tournaments_email_sender = tournaments_email_sender
         if _env() == "prod":
             self._admin_emails = ["loga9822@hotmail.com", "clubdeportivovittoria+pagos@gmail.com", "jd_rodrigueza@javeriana.edu.co"]
             self._admin_email_notifications_enabled = True
@@ -319,16 +332,57 @@ class Notifications:
             action_url_path="dashboard/calendar"
         )
     
-    def team_registered(self, *, email: str, club_name: str, tournament_name: str) -> dict[str, str | Exception]:
+    def team_registered(self, *, email: str, club_name: str, tournament_name: str, redirect_url: str = "") -> dict[str, str | Exception]:
+        if not self._tournaments_email_sender:
+            logger.warning("COURIER_TOURNAMENTS_AUTH_TOKEN not configured; skipping team_registered email for %s", email)
+            return {}
         results: dict[str, str | Exception] = {}
         try:
-            results["email"] = self._send_email(
+            # Tournament-related template lives in the tournaments Courier workspace.
+            results["email"] = self._tournaments_email_sender.send_template(
                 template_id=self.COURIER_TEMPLATE_TEAM_REGISTERED,
                 to_email=email,
-                data={"club_name": club_name, "tournament_name": tournament_name},
+                data={
+                    "club_name": club_name,
+                    "tournament_name": tournament_name,
+                    "redirect_url": redirect_url,
+                },
             )
         except Exception as e:
             results["email"] = e
+            logger.exception("team_registered: Courier send failed for %s", email)
+        return results
+
+    def team_owner_invited(
+        self,
+        *,
+        email: str,
+        club_name: str,
+        redirect_url: str,
+    ) -> dict[str, str | Exception]:
+        """Send invitation email. If the Courier template ID isn't configured,
+        no-op (returns empty dict) so dev doesn't 500 — but logs a warning."""
+        if not self.COURIER_TEMPLATE_TEAM_OWNER_INVITE:
+            logger.warning("COURIER_TEMPLATE_TEAM_OWNER_INVITE not configured; skipping email for %s", email)
+            return {}
+        if not self._tournaments_email_sender:
+            logger.warning("COURIER_TOURNAMENTS_AUTH_TOKEN not configured; skipping team_owner_invited email for %s", email)
+            return {}
+        results: dict[str, str | Exception] = {}
+        try:
+            # Tournament invites go through the tournaments Courier workspace (separate auth token).
+            request_id = self._tournaments_email_sender.send_template(
+                template_id=self.COURIER_TEMPLATE_TEAM_OWNER_INVITE,
+                to_email=email,
+                data={
+                    "club_name": club_name,
+                    "redirect_url": redirect_url,
+                },
+            )
+            results["email"] = request_id
+        except Exception as e:
+            results["email"] = e
+            logger.exception("team_owner_invited: Courier send failed for %s", email)
         return results
 
     def votation_opened(self, *, user_emails: list[str], month: str) -> str:

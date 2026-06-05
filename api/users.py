@@ -5,8 +5,38 @@ from auth import PermissionChecker, get_account_id
 from services.user_service import UserService
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from api.schemas.users import PutUser, CreateUser, PutUserAvatar, PutUserMetrics, PutTourPreferences
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
+from repositories.tournament_repo_ddb import TournamentRepo
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/me/team-owner/teams", dependencies=[Depends(PermissionChecker(["team_owner", "admin", "user"]))])
+def my_team_owner_teams(
+    user: dict = Depends(get_current_user),
+    account_id: str = Depends(get_account_id),
+    tt_repo: TournamentTeamRepo = Depends(lambda: TournamentTeamRepo()),
+    t_repo: TournamentRepo = Depends(lambda: TournamentRepo()),
+):
+    user_id = user["sub"]
+    # Approach (a): fetch all tournaments for the account, then all teams under
+    # each tournament, filter by owner_user_id — no schema changes needed.
+    tournaments = t_repo.list_by_account(account_id)
+    result = []
+    for tournament in tournaments:
+        tournament_id = tournament.get("id")
+        if not tournament_id:
+            continue
+        teams = tt_repo.list_by_tournament(tournament_id)
+        for team in teams:
+            if team.get("owner_user_id") == user_id:
+                result.append({
+                    "tournament_id": tournament_id,
+                    "tournament_name": tournament.get("name"),
+                    "tournament_team_id": team["id"],
+                    "team_name": team.get("name"),
+                })
+    return result
 
 
 @router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
@@ -31,7 +61,7 @@ async def create_user(
     item = svc.create(create_user)
     return item
 
-@router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+@router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user', 'team_owner']))])
 async def get_user(
     user_id: str, 
     account_id: str = Depends(get_account_id),

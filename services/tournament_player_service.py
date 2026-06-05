@@ -13,6 +13,7 @@ from repositories.s3_adapter import S3Adapter
 from repositories.tournament_player_repo_ddb import TournamentPlayerRepo
 from repositories.tournament_match_event_repo_ddb import TournamentMatchEventRepo
 from repositories.tournament_match_repo_ddb import TournamentMatchRepo
+from repositories.tournament_team_repo_ddb import TournamentTeamRepo
 
 
 class TournamentPlayerService:
@@ -22,13 +23,35 @@ class TournamentPlayerService:
         match_repo: TournamentMatchRepo,
         event_repo: TournamentMatchEventRepo,
         s3: S3Adapter | None = None,
+        team_repo: TournamentTeamRepo | None = None,
     ):
         self.repo = repo
         self.match_repo = match_repo
         self.event_repo = event_repo
         self.s3 = s3
+        self.team_repo = team_repo
 
-    def create_player(self, tournament_id: str, team_id: str, body: CreatePlayer) -> dict[str, Any]:
+    # ── Ownership guard ──────────────────────────────────────────────────
+
+    def _assert_team_ownership(self, team_id: str, acting_user_id: str) -> None:
+        """Raise PermissionError if acting_user_id is not the owner of team_id."""
+        if not self.team_repo:
+            raise PermissionError("Team ownership check unavailable")
+        team = self.team_repo.get(team_id)
+        if not team or team.get("owner_user_id") != acting_user_id:
+            raise PermissionError("Team owner can only manage players on their own team")
+
+    def create_player(
+        self,
+        tournament_id: str,
+        team_id: str,
+        body: CreatePlayer,
+        *,
+        acting_user_id: str | None = None,
+        acting_role: str | None = None,
+    ) -> dict[str, Any]:
+        if acting_role == "team_owner":
+            self._assert_team_ownership(team_id, acting_user_id)
         item = {
             "id": f"tpl_{uuid4().hex}",
             "tournament_id": tournament_id,
@@ -66,10 +89,19 @@ class TournamentPlayerService:
             result.sort(key=lambda p: p.get("stats", {}).get(sort_by, 0), reverse=True)
         return result
 
-    def update_player(self, player_id: str, body: PatchPlayer) -> dict[str, Any] | None:
+    def update_player(
+        self,
+        player_id: str,
+        body: PatchPlayer,
+        *,
+        acting_user_id: str | None = None,
+        acting_role: str | None = None,
+    ) -> dict[str, Any] | None:
         existing = self.repo.get(player_id)
         if not existing:
             return None
+        if acting_role == "team_owner":
+            self._assert_team_ownership(existing["team_id"], acting_user_id)
         updates = body.dict(exclude_unset=True, exclude_none=True)
         if "position" in updates:
             updates["position"] = updates["position"]  # already str via Pydantic
@@ -78,16 +110,35 @@ class TournamentPlayerService:
         updated = self.repo.update(player_id, updates)
         return self._with_stats(updated) if updated else None
 
-    def delete_player(self, player_id: str) -> bool:
+    def delete_player(
+        self,
+        player_id: str,
+        *,
+        acting_user_id: str | None = None,
+        acting_role: str | None = None,
+    ) -> bool:
         existing = self.repo.get(player_id)
         if not existing:
             return False
+        if acting_role == "team_owner":
+            self._assert_team_ownership(existing["team_id"], acting_user_id)
         self.repo.delete(player_id)
         return True
 
     def generate_avatar_upload_url(
-        self, player_id: str, account_id: str, filename: str, content_type: str
+        self,
+        player_id: str,
+        account_id: str,
+        filename: str,
+        content_type: str,
+        *,
+        acting_user_id: str | None = None,
+        acting_role: str | None = None,
     ) -> dict[str, str]:
+        if acting_role == "team_owner":
+            existing = self.repo.get(player_id)
+            if existing:
+                self._assert_team_ownership(existing["team_id"], acting_user_id)
         if not self.s3:
             raise ValueError("S3 adapter not configured")
         return self.s3.presign_player_avatar_put(
@@ -97,60 +148,21 @@ class TournamentPlayerService:
             content_type=content_type,
         )
 
-    # ── Computed stats ───────────────────────────────────────────────
-
-    def _with_batch_stats(self, tournament_id: str, players: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Compute stats for all players in a single batch pass (1 + N_matches queries)."""
-        if not players:
-            return players
-
-        finished = self.match_repo.list_by_tournament(tournament_id, status="finished")
-        if not finished:
-            for p in players:
-                p["stats"] = self._empty_stats()
-            return players
-
-        events_by_match = self.event_repo.batch_list_by_matches([m["id"] for m in finished])
-
-        for player in players:
-            self._resolve_avatar(player)
-            player_id = player["id"]
-            team_id = player.get("team_id")
-            goals = assists = yellow_cards = red_cards = appearances = 0
-
-            for match in finished:
-                if match.get("home_team_id") != team_id and match.get("away_team_id") != team_id:
-                    continue
-                player_in_match = False
-                for ev in events_by_match.get(match["id"], []):
-                    if ev.get("player_id") == player_id:
-                        player_in_match = True
-                        etype = ev.get("type")
-                        if etype in ("goal", "penalty_scored"):
-                            goals += 1
-                        elif etype == "yellow_card":
-                            yellow_cards += 1
-                        elif etype in ("red_card", "second_yellow"):
-                            red_cards += 1
-                    if ev.get("assist_player_id") == player_id:
-                        player_in_match = True
-                        assists += 1
-                if player_in_match:
-                    appearances += 1
-
-            player["stats"] = {
-                "goals": goals,
-                "assists": assists,
-                "yellow_cards": yellow_cards,
-                "red_cards": red_cards,
-                "appearances": appearances,
-            }
-        return players
+    # ── Stats (materialized) ─────────────────────────────────────────
 
     def _with_stats(self, player: dict[str, Any]) -> dict[str, Any]:
-        """Attach computed stats for a single player (used by get/create/update)."""
-        result = self._with_batch_stats(player.get("tournament_id", ""), [player])
-        return result[0]
+        """Attach the materialized stats and presign avatar URL."""
+        self._resolve_avatar(player)
+        if not player.get("stats"):
+            player["stats"] = self._empty_stats()
+        return player
+
+    def _with_batch_stats(self, _tournament_id: str, players: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Compatibility shim — stats are now stored on the player item,
+        so this is a no-op that just presigns avatars."""
+        for p in players:
+            self._with_stats(p)
+        return players
 
     def _resolve_avatar(self, player: dict[str, Any]) -> None:
         """Convert stored S3 key to a presigned GET URL in-place."""
@@ -163,9 +175,11 @@ class TournamentPlayerService:
     @staticmethod
     def _empty_stats() -> dict:
         return {
+            "appearances": 0,
             "goals": 0,
+            "penalties": 0,
+            "own_goals": 0,
             "assists": 0,
             "yellow_cards": 0,
             "red_cards": 0,
-            "appearances": 0,
         }

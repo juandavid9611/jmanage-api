@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from di import get_membership_service
 from services.membership_service import MembershipService
 from auth import get_current_user, PermissionChecker, get_account_id
+from api.schemas.memberships import UpdateMembershipRole
 
 router = APIRouter(prefix="/memberships", tags=["memberships"])
 
@@ -14,25 +15,15 @@ async def get_my_memberships(
     user_id = user.get("sub")
     return svc.get_user_memberships(user_id)
 
-@router.put("/my-workspace")
-async def update_my_workspace(
-    workspace_id: str = Query(..., description="Workspace ID to set as active"),
-    user: dict = Depends(get_current_user),
+
+@router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def list_user_memberships(
+    user_id: str,
     account_id: str = Depends(get_account_id),
-    svc: MembershipService = Depends(get_membership_service)
+    svc: MembershipService = Depends(get_membership_service),
 ):
-    """Update the current user's active workspace selection.
-    
-    Validates the user has an active membership for the target workspace.
-    """
-    user_id = user.get("sub")
-    result = svc.update_user_active_workspace(user_id, account_id, workspace_id)
-    if not result:
-        raise HTTPException(
-            status_code=404,
-            detail="No active membership found for user in this account"
-        )
-    return result
+    """List all memberships for a target user in the current account (admin only)."""
+    return svc.get_user_account_memberships(user_id, account_id)
 
 @router.post("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def create_membership(
@@ -107,3 +98,18 @@ async def disable_membership(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def patch_membership_role(
+    user_id: str,
+    body: UpdateMembershipRole,
+    workspace_id: str = Query(..., description="Workspace ID of the membership"),
+    account_id: str = Depends(get_account_id),
+    svc: MembershipService = Depends(get_membership_service),
+):
+    """Change a user's role in a specific workspace (admin only). Non-destructive."""
+    try:
+        return svc.update_role(user_id, account_id, workspace_id, body.role)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
