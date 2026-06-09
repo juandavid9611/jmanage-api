@@ -154,7 +154,7 @@ class CreatePlayer(BaseModel):
     name: str
     position: PlayerPosition
     number: int
-    id_number: str | None = None
+    id_number: str
     avatar_url: str | None = None
 
 
