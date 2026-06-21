@@ -248,30 +248,31 @@ async def create_tournament_match_charges(
             team_cache[team_id] = team
 
     created = 0
-    skipped = 0
     skipped_already_charged = 0
+    skipped_no_team = 0
+    skipped_no_email = 0
+    skipped_fee_zero = 0
 
     for ev in card_events:
         if ev.get("id") in charged_event_ids:
-            skipped += 1
             skipped_already_charged += 1
             continue
 
         team_id = ev.get("team_id")
         team = team_cache.get(team_id)
         if not team:
-            skipped += 1
+            skipped_no_team += 1
             continue
         contact_email = (team.get("contact_email") or "").strip()
         if not contact_email:
-            skipped += 1
+            skipped_no_email += 1
             continue
 
         ev_type = ev.get("type")
         is_red = ev_type in _CARD_RED_TYPES
         fee = red_fee if is_red else yellow_fee
         if fee == 0:
-            skipped += 1
+            skipped_fee_zero += 1
             continue
 
         card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
@@ -297,6 +298,12 @@ async def create_tournament_match_charges(
             created += 1
         except Exception as exc:
             print(f"[payments] failed to create charge for team {team_id} event {ev.get('id')}: {exc}")
-            skipped += 1
 
-    return {"created": created, "skipped": skipped, "skipped_already_charged": skipped_already_charged}
+    return {
+        "created": created,
+        "card_events_found": len(card_events),
+        "skipped_already_charged": skipped_already_charged,
+        "skipped_no_team": skipped_no_team,
+        "skipped_no_email": skipped_no_email,
+        "skipped_fee_zero": skipped_fee_zero,
+    }
