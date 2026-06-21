@@ -59,6 +59,8 @@ class TournamentRules(BaseModel):
     extra_time_allowed: bool = True
     penalties_allowed: bool = True
     max_substitutions: int = 5
+    yellow_card_fee: int = 0
+    red_card_fee: int = 0
 
 
 # ── Tournament ───────────────────────────────────────────────────────────
@@ -79,6 +81,7 @@ class CreateTournament(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     location: str | None = None
+    payments_enabled: bool = False
 
 
 class PatchTournament(BaseModel):
@@ -97,6 +100,7 @@ class PatchTournament(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     location: str | None = None
+    payments_enabled: bool | None = None
 
 
 class TournamentLogoRequest(BaseModel):
