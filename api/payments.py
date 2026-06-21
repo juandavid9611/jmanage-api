@@ -1,9 +1,23 @@
+from datetime import datetime, timedelta
+
+from pydantic import BaseModel
+
 from auth import PermissionChecker, WorkspacePermissionChecker, get_account_id, get_current_user, get_account_role
 from api.schemas.files import FileSpec
-from di import get_payment_request_service
+from di import (
+    get_match_event_service,
+    get_match_service,
+    get_payment_request_service,
+    get_tournament_service,
+    get_tournament_team_service,
+)
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query
 from api.schemas.payments import BulkPutPaymentRequest
 from services.payment_request_service import PaymentRequestService
+from services.tournament_match_event_service import TournamentMatchEventService
+from services.tournament_match_service import TournamentMatchService
+from services.tournament_service import TournamentService
+from services.tournament_team_service import TournamentTeamService
 
 
 router = APIRouter(prefix="/payment_requests", tags=["payment_requests"])
@@ -177,3 +191,110 @@ async def request_payment_request_approval(
         raise HTTPException(status_code=400, detail="No files were uploaded")
     
     return {"requested_payment_request_approval_id": svc.request_payment_request_approval(payment_request_id, account_id, file_names)}
+
+
+_CARD_YELLOW_TYPES = {"yellow_card"}
+_CARD_RED_TYPES = {"red_card", "second_yellow"}
+
+
+class TournamentMatchChargesRequest(BaseModel):
+    tournamentId: str
+    matchId: str
+
+
+@router.post(
+    "/tournament-match-charges",
+    dependencies=[Depends(PermissionChecker(required_permissions=['admin']))]
+)
+async def create_tournament_match_charges(
+    body: TournamentMatchChargesRequest,
+    account_id: str = Depends(get_account_id),
+    t_svc: TournamentService = Depends(get_tournament_service),
+    m_svc: TournamentMatchService = Depends(get_match_service),
+    ev_svc: TournamentMatchEventService = Depends(get_match_event_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
+    pr_svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    tournament = t_svc.get_tournament(body.tournamentId, account_id)
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+    if not tournament.get("payments_enabled"):
+        raise HTTPException(status_code=400, detail="Payments not enabled for this tournament")
+
+    match = m_svc.get_match(body.matchId)
+    if not match or match.get("tournament_id") != body.tournamentId:
+        raise HTTPException(status_code=404, detail="Match not found")
+    if match.get("status") != "finished":
+        raise HTTPException(status_code=400, detail="Match is not finished")
+
+    rules = tournament.get("rules") or {}
+    yellow_fee = int(rules.get("yellow_card_fee") or 0)
+    red_fee = int(rules.get("red_card_fee") or 0)
+
+    events = ev_svc.list_events(body.matchId)
+    card_events = [ev for ev in events if ev.get("type") in (_CARD_YELLOW_TYPES | _CARD_RED_TYPES)]
+
+    existing_prs = pr_svc.list_payment_requests(account_id, group=body.tournamentId)
+    charged_event_ids = {pr.get("reference") for pr in existing_prs if pr.get("reference")}
+
+    today = datetime.utcnow().date().isoformat()
+    due = (datetime.utcnow() + timedelta(days=30)).date().isoformat()
+    tournament_name = tournament.get("name", "Torneo")
+
+    team_cache: dict[str, dict] = {}
+    for team_id in {ev.get("team_id") for ev in card_events if ev.get("team_id")}:
+        team = team_svc.get_team(team_id)
+        if team:
+            team_cache[team_id] = team
+
+    created = 0
+    skipped = 0
+
+    for ev in card_events:
+        if ev.get("id") in charged_event_ids:
+            skipped += 1
+            continue
+
+        team_id = ev.get("team_id")
+        team = team_cache.get(team_id)
+        if not team:
+            skipped += 1
+            continue
+        contact_email = (team.get("contact_email") or "").strip()
+        if not contact_email:
+            skipped += 1
+            continue
+
+        ev_type = ev.get("type")
+        is_red = ev_type in _CARD_RED_TYPES
+        fee = red_fee if is_red else yellow_fee
+        if fee == 0:
+            skipped += 1
+            continue
+
+        card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
+        recipient_name = team.get("manager_name") or team.get("name", "Equipo")
+        home_team = team_cache.get(match.get("home_team_id", ""))
+        away_team = team_cache.get(match.get("away_team_id", ""))
+        home_name = (home_team or {}).get("name") or match.get("home_team_id", "")
+        away_name = (away_team or {}).get("name") or match.get("away_team_id", "")
+
+        bulk_item = BulkPutPaymentRequest(
+            createDate=today,
+            dueDate=due,
+            concept=f"{card_label} - {tournament_name}",
+            description=f"Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
+            category="tournament_fine",
+            group=body.tournamentId,
+            paymentRequestTo=[{"id": team_id, "name": recipient_name, "email": contact_email}],
+            userPrice=fee,
+            reference=ev["id"],
+        )
+        try:
+            pr_svc.bulk_create(bulk_item, account_id)
+            created += 1
+        except Exception as exc:
+            print(f"[payments] failed to create charge for team {team_id} event {ev.get('id')}: {exc}")
+            skipped += 1
+
+    return {"created": created, "skipped": skipped}
