@@ -663,6 +663,7 @@ def _create_card_charges(
             group=tournament_id,
             paymentRequestTo=[{"id": team_id, "name": recipient_name, "email": contact_email}],
             userPrice=fee,
+            reference=ev["id"],
         )
         try:
             pr_svc.bulk_create(bulk_item, account_id)
