@@ -23,3 +23,4 @@ class BulkPutPaymentRequest(BaseModel):
     userPrice: int
     overduePrice: int | None = None
     orderId: str | None = None
+    reference: str | None = None

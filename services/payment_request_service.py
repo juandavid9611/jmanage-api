@@ -294,4 +294,6 @@ class PaymentRequestService:
         }
         if bulk_item.orderId:
             new_item["order_id"] = bulk_item.orderId
+        if bulk_item.reference:
+            new_item["reference"] = bulk_item.reference
         return new_item
