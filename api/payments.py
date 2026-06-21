@@ -249,10 +249,12 @@ async def create_tournament_match_charges(
 
     created = 0
     skipped = 0
+    skipped_already_charged = 0
 
     for ev in card_events:
         if ev.get("id") in charged_event_ids:
             skipped += 1
+            skipped_already_charged += 1
             continue
 
         team_id = ev.get("team_id")
@@ -297,4 +299,4 @@ async def create_tournament_match_charges(
             print(f"[payments] failed to create charge for team {team_id} event {ev.get('id')}: {exc}")
             skipped += 1
 
-    return {"created": created, "skipped": skipped}
+    return {"created": created, "skipped": skipped, "skipped_already_charged": skipped_already_charged}
