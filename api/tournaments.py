@@ -24,6 +24,7 @@ from di import (
     get_match_event_service,
     get_standings_service,
     get_tournament_stats_service,
+    get_payment_request_service,
 )
 from services.tournament_service import TournamentService
 from services.tournament_team_service import TournamentTeamService
@@ -32,6 +33,8 @@ from services.tournament_match_service import TournamentMatchService
 from services.tournament_match_event_service import TournamentMatchEventService
 from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
+from services.payment_request_service import PaymentRequestService
+from api.schemas.payments import BulkPutPaymentRequest
 
 from api.schemas.tournaments import (
     CreateTournament,
@@ -582,6 +585,86 @@ async def get_match(
     return item
 
 
+# Card event types that trigger charges
+_YELLOW_TYPES = {"yellow_card"}
+_RED_TYPES = {"red_card", "second_yellow"}
+
+
+def _create_card_charges(
+    match: dict,
+    tournament: dict,
+    ev_svc: TournamentMatchEventService,
+    team_svc: TournamentTeamService,
+    pr_svc: PaymentRequestService,
+    account_id: str,
+) -> None:
+    """Create one payment-request charge per card event on a finished match.
+
+    Silently skips teams with no contact_email and events with a zero fee.
+    """
+    from datetime import datetime, timedelta
+
+    rules = tournament.get("rules") or {}
+    yellow_fee = int(rules.get("yellow_card_fee") or 0)
+    red_fee = int(rules.get("red_card_fee") or 0)
+
+    if yellow_fee == 0 and red_fee == 0:
+        return
+
+    events = ev_svc.list_events(match["id"])
+    card_events = [
+        ev for ev in events
+        if ev.get("type") in (_YELLOW_TYPES | _RED_TYPES)
+    ]
+    if not card_events:
+        return
+
+    today = datetime.utcnow().date().isoformat()
+    due = (datetime.utcnow() + timedelta(days=30)).date().isoformat()
+    tournament_name = tournament.get("name", "Torneo")
+    tournament_id = tournament.get("id", "")
+
+    # Pre-fetch teams (at most two per match)
+    team_cache: dict[str, dict] = {}
+    for team_id in {ev.get("team_id") for ev in card_events if ev.get("team_id")}:
+        team = team_svc.get_team(team_id)
+        if team:
+            team_cache[team_id] = team
+
+    for ev in card_events:
+        team_id = ev.get("team_id")
+        team = team_cache.get(team_id)
+        if not team:
+            continue
+        contact_email = (team.get("contact_email") or "").strip()
+        if not contact_email:
+            continue
+
+        ev_type = ev.get("type")
+        is_red = ev_type in _RED_TYPES
+        fee = red_fee if is_red else yellow_fee
+        if fee == 0:
+            continue
+
+        card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
+        recipient_name = team.get("manager_name") or team.get("name", "Equipo")
+
+        bulk_item = BulkPutPaymentRequest(
+            createDate=today,
+            dueDate=due,
+            concept=f"{card_label} - {tournament_name}",
+            description=f"Partido {match.get('date', '')[:10]}: {match.get('home_team_id', '')} vs {match.get('away_team_id', '')}",
+            category="tournament_fine",
+            group=tournament_id,
+            paymentRequestTo=[{"id": team_id, "name": recipient_name, "email": contact_email}],
+            userPrice=fee,
+        )
+        try:
+            pr_svc.bulk_create(bulk_item, account_id)
+        except Exception as exc:
+            print(f"[tournament] failed to create charge for team {team_id} event {ev.get('id')}: {exc}")
+
+
 @router.patch("/{tournament_id}/matches/{match_id}", dependencies=[Depends(ADMIN)])
 async def update_match(
     tournament_id: str,
@@ -590,15 +673,36 @@ async def update_match(
     account_id: str = Depends(get_account_id),
     t_svc: TournamentService = Depends(get_tournament_service),
     svc: TournamentMatchService = Depends(get_match_service),
+    ev_svc: TournamentMatchEventService = Depends(get_match_event_service),
+    team_svc: TournamentTeamService = Depends(get_tournament_team_service),
+    pr_svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
     _require_tournament(t_svc, tournament_id, account_id)
     existing = svc.get_match(match_id)
     if not existing or existing.get("tournament_id") != tournament_id:
         raise HTTPException(status_code=404, detail="Match not found")
     try:
-        return svc.update_match(match_id, body)
+        result = svc.update_match(match_id, body)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Auto-create card charges when transitioning live → finished
+    if (
+        body.status == "finished"
+        and existing.get("status") != "finished"
+    ):
+        tournament = t_svc.get_tournament(tournament_id, account_id)
+        if tournament and tournament.get("payments_enabled"):
+            _create_card_charges(
+                result or existing,
+                tournament,
+                ev_svc,
+                team_svc,
+                pr_svc,
+                account_id,
+            )
+
+    return result
 
 
 @router.delete("/{tournament_id}/matches/{match_id}", dependencies=[Depends(ADMIN)])
