@@ -649,11 +649,16 @@ def _create_card_charges(
         card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
         recipient_name = team.get("manager_name") or team.get("name", "Equipo")
 
+        home_team = team_cache.get(match.get("home_team_id", ""))
+        away_team = team_cache.get(match.get("away_team_id", ""))
+        home_name = (home_team or {}).get("name") or match.get("home_team_id", "")
+        away_name = (away_team or {}).get("name") or match.get("away_team_id", "")
+
         bulk_item = BulkPutPaymentRequest(
             createDate=today,
             dueDate=due,
             concept=f"{card_label} - {tournament_name}",
-            description=f"Partido {match.get('date', '')[:10]}: {match.get('home_team_id', '')} vs {match.get('away_team_id', '')}",
+            description=f"Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
             category="tournament_fine",
             group=tournament_id,
             paymentRequestTo=[{"id": team_id, "name": recipient_name, "email": contact_email}],
