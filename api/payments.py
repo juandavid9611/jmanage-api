@@ -250,14 +250,15 @@ async def create_tournament_match_charges(
         if team:
             team_cache[team_id] = team
 
-    # Pre-fetch manager users for all teams (uses repo directly — no Cognito call)
-    manager_cache: dict[str, dict] = {}
-    for team in team_cache.values():
-        for uid in (team.get("manager_user_ids") or [])[:1]:
-            if uid not in manager_cache:
-                raw = user_svc.repo.get(uid, account_id)
-                if raw:
-                    manager_cache[uid] = raw
+    # Pre-fetch manager users by contact_email (manager_user_ids is never populated)
+    # Keyed by team_id for O(1) lookup in the loop below
+    manager_by_team: dict[str, dict] = {}
+    for team_id, team in team_cache.items():
+        email = (team.get("contact_email") or "").strip()
+        if email:
+            user = user_svc.repo.get_by_email(email)
+            if user:
+                manager_by_team[team_id] = user
 
     created = 0
     skipped_already_charged = 0
@@ -276,8 +277,7 @@ async def create_tournament_match_charges(
             skipped_no_team += 1
             continue
 
-        manager_user_ids = team.get("manager_user_ids") or []
-        manager = manager_cache.get(manager_user_ids[0]) if manager_user_ids else None
+        manager = manager_by_team.get(team_id)
         if not manager:
             skipped_no_manager += 1
             continue
@@ -290,6 +290,7 @@ async def create_tournament_match_charges(
             continue
 
         card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
+        recipient_id = manager.get("id", "")
         recipient_email = manager.get("email", "")
         recipient_name = manager.get("name") or team.get("name", "Equipo")
         home_team = team_cache.get(match.get("home_team_id", ""))
@@ -304,7 +305,7 @@ async def create_tournament_match_charges(
             description=f"Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
             category="tournament_fine",
             group=body.tournamentId,
-            paymentRequestTo=[{"id": manager_user_ids[0], "name": recipient_name, "email": recipient_email}],
+            paymentRequestTo=[{"id": recipient_id, "name": recipient_name, "email": recipient_email}],
             userPrice=fee,
             reference=ev["id"],
         )
