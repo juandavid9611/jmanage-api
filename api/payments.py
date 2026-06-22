@@ -262,6 +262,7 @@ async def create_tournament_match_charges(
     created = 0
     skipped_already_charged = 0
     skipped_no_team = 0
+    skipped_no_manager = 0
     skipped_fee_zero = 0
 
     for ev in card_events:
@@ -278,7 +279,7 @@ async def create_tournament_match_charges(
         manager_user_ids = team.get("manager_user_ids") or []
         manager = manager_cache.get(manager_user_ids[0]) if manager_user_ids else None
         if not manager:
-            skipped_no_team += 1
+            skipped_no_manager += 1
             continue
 
         ev_type = ev.get("type")
@@ -318,5 +319,6 @@ async def create_tournament_match_charges(
         "card_events_found": len(card_events),
         "skipped_already_charged": skipped_already_charged,
         "skipped_no_team": skipped_no_team,
+        "skipped_no_manager": skipped_no_manager,
         "skipped_fee_zero": skipped_fee_zero,
     }
