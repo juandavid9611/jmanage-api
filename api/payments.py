@@ -10,6 +10,7 @@ from di import (
     get_payment_request_service,
     get_tournament_service,
     get_tournament_team_service,
+    get_user_service,
 )
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query
 from api.schemas.payments import BulkPutPaymentRequest
@@ -18,6 +19,7 @@ from services.tournament_match_event_service import TournamentMatchEventService
 from services.tournament_match_service import TournamentMatchService
 from services.tournament_service import TournamentService
 from services.tournament_team_service import TournamentTeamService
+from services.user_service import UserService
 
 
 router = APIRouter(prefix="/payment_requests", tags=["payment_requests"])
@@ -213,6 +215,7 @@ async def create_tournament_match_charges(
     m_svc: TournamentMatchService = Depends(get_match_service),
     ev_svc: TournamentMatchEventService = Depends(get_match_event_service),
     team_svc: TournamentTeamService = Depends(get_tournament_team_service),
+    user_svc: UserService = Depends(get_user_service),
     pr_svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
     tournament = t_svc.get_tournament(body.tournamentId, account_id)
@@ -247,10 +250,18 @@ async def create_tournament_match_charges(
         if team:
             team_cache[team_id] = team
 
+    # Pre-fetch manager users for all teams (uses repo directly — no Cognito call)
+    manager_cache: dict[str, dict] = {}
+    for team in team_cache.values():
+        for uid in (team.get("manager_user_ids") or [])[:1]:
+            if uid not in manager_cache:
+                raw = user_svc.repo.get(uid, account_id)
+                if raw:
+                    manager_cache[uid] = raw
+
     created = 0
     skipped_already_charged = 0
     skipped_no_team = 0
-    skipped_no_email = 0
     skipped_fee_zero = 0
 
     for ev in card_events:
@@ -263,9 +274,11 @@ async def create_tournament_match_charges(
         if not team:
             skipped_no_team += 1
             continue
-        contact_email = (team.get("contact_email") or "").strip()
-        if not contact_email:
-            skipped_no_email += 1
+
+        manager_user_ids = team.get("manager_user_ids") or []
+        manager = manager_cache.get(manager_user_ids[0]) if manager_user_ids else None
+        if not manager:
+            skipped_no_team += 1
             continue
 
         ev_type = ev.get("type")
@@ -276,7 +289,8 @@ async def create_tournament_match_charges(
             continue
 
         card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
-        recipient_name = team.get("manager_name") or team.get("name", "Equipo")
+        recipient_email = manager.get("email", "")
+        recipient_name = manager.get("name") or team.get("name", "Equipo")
         home_team = team_cache.get(match.get("home_team_id", ""))
         away_team = team_cache.get(match.get("away_team_id", ""))
         home_name = (home_team or {}).get("name") or match.get("home_team_id", "")
@@ -289,7 +303,7 @@ async def create_tournament_match_charges(
             description=f"Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
             category="tournament_fine",
             group=body.tournamentId,
-            paymentRequestTo=[{"id": team_id, "name": recipient_name, "email": contact_email}],
+            paymentRequestTo=[{"id": manager_user_ids[0], "name": recipient_name, "email": recipient_email}],
             userPrice=fee,
             reference=ev["id"],
         )
@@ -304,6 +318,5 @@ async def create_tournament_match_charges(
         "card_events_found": len(card_events),
         "skipped_already_charged": skipped_already_charged,
         "skipped_no_team": skipped_no_team,
-        "skipped_no_email": skipped_no_email,
         "skipped_fee_zero": skipped_fee_zero,
     }
