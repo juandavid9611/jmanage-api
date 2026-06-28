@@ -250,13 +250,12 @@ async def create_tournament_match_charges(
         if team:
             team_cache[team_id] = team
 
-    # Pre-fetch manager users by contact_email (manager_user_ids is never populated)
-    # Keyed by team_id for O(1) lookup in the loop below
+    # Pre-fetch team owners via owner_user_id (set on invitation acceptance)
     manager_by_team: dict[str, dict] = {}
     for team_id, team in team_cache.items():
-        email = (team.get("contact_email") or "").strip()
-        if email:
-            user = user_svc.repo.get_by_email(email)
+        owner_id = team.get("owner_user_id")
+        if owner_id:
+            user = user_svc.repo.get(owner_id, account_id)
             if user:
                 manager_by_team[team_id] = user
 
