@@ -250,14 +250,24 @@ async def create_tournament_match_charges(
         if team:
             team_cache[team_id] = team
 
-    # Pre-fetch team owners via owner_user_id (set on invitation acceptance)
-    manager_by_team: dict[str, dict] = {}
-    for team_id, team in team_cache.items():
+    # Build recipient info per team.
+    # Priority: owner_user_id (invitation-accepted) → contact_email user lookup → contact_email direct.
+    RecipientInfo = tuple  # (id, email, name)
+    recipient_by_team: dict[str, RecipientInfo] = {}
+    for tid, team in team_cache.items():
         owner_id = team.get("owner_user_id")
         if owner_id:
             user = user_svc.repo.get(owner_id, account_id)
             if user:
-                manager_by_team[team_id] = user
+                recipient_by_team[tid] = (user["id"], user.get("email", ""), user.get("name") or team.get("name", "Equipo"))
+                continue
+        contact_email = (team.get("contact_email") or "").strip()
+        if contact_email:
+            user = user_svc.repo.get_by_email(contact_email)
+            if user:
+                recipient_by_team[tid] = (user["id"], user.get("email", contact_email), user.get("name") or team.get("name", "Equipo"))
+            else:
+                recipient_by_team[tid] = (tid, contact_email, team.get("name", "Equipo"))
 
     created = 0
     skipped_already_charged = 0
@@ -276,8 +286,8 @@ async def create_tournament_match_charges(
             skipped_no_team += 1
             continue
 
-        manager = manager_by_team.get(team_id)
-        if not manager:
+        recipient = recipient_by_team.get(team_id)
+        if not recipient:
             skipped_no_manager += 1
             continue
 
@@ -289,9 +299,7 @@ async def create_tournament_match_charges(
             continue
 
         card_label = "Tarjeta Roja" if is_red else "Tarjeta Amarilla"
-        recipient_id = manager.get("id", "")
-        recipient_email = manager.get("email", "")
-        recipient_name = manager.get("name") or team.get("name", "Equipo")
+        recipient_id, recipient_email, recipient_name = recipient
         home_team = team_cache.get(match.get("home_team_id", ""))
         away_team = team_cache.get(match.get("away_team_id", ""))
         home_name = (home_team or {}).get("name") or match.get("home_team_id", "")
