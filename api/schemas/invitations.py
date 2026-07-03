@@ -44,10 +44,11 @@ class InvitationSummary(CamelModel):
     """Public projection returned by GET /public/invites/{token} — strips token,
     drops org-only fields, adds derived booleans for the frontend."""
 
-    tournament_id: str
-    tournament_name: str
-    tournament_team_id: str
-    team_name: str
+    invitation_type: str = "team_owner"
+    tournament_id: Optional[str] = None
+    tournament_name: Optional[str] = None
+    tournament_team_id: Optional[str] = None
+    team_name: Optional[str] = None
     organizer_account_name: str
     email: str
     email_has_existing_user: bool
@@ -61,8 +62,13 @@ class AcceptInvitationRequest(CamelModel):
 
 class AcceptInvitationResponse(CamelModel):
     account_id: str
-    tournament_id: str
-    tournament_team_id: str
+    invitation_type: str = "team_owner"
+    tournament_id: Optional[str] = None
+    tournament_team_id: Optional[str] = None
     access_token: Optional[str] = None   # only set on new-user path
     refresh_token: Optional[str] = None  # only set on new-user path
     id_token: Optional[str] = None       # only set on new-user path
+
+
+class CreateAdminInvitationRequest(CamelModel):
+    email: str

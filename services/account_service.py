@@ -30,7 +30,8 @@ class AccountService:
                 "default_workspace": default_workspace_id,
                 "timezone": "America/Bogota",
                 "language": "es",
-                "currency": "COP"
+                "currency": "COP",
+                "account_type": "club"
             },
             "subscription": item.subscription.dict() if item.subscription else {
                 "plan": "free",

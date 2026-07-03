@@ -25,6 +25,7 @@ class Notifications:
     COURIER_TEMPLATE_CHRISTMAS_GREETING = "070Z3SZX8V4YAXMTAEWKCXW2NVEV"
     COURIER_TEMPLATE_TEAM_REGISTERED = "PH45YYJWG8MGEBMG02E4CDZSV256"
     COURIER_TEMPLATE_TEAM_OWNER_INVITE: str | None = "RP0NPER4FXMH75N0Z0JKT0MY61B6"
+    COURIER_TEMPLATE_ADMIN_INVITE: str | None = "0D8ZTXVXND4QMWNKAXB2HKDGN5EB"
     COURIER_TEMPLATE_ORDER_CREATED: str | None = None
     COURIER_TEMPLATE_ORDER_STATUS_CHANGED: str | None = None
 
@@ -383,6 +384,39 @@ class Notifications:
         except Exception as e:
             results["email"] = e
             logger.exception("team_owner_invited: Courier send failed for %s", email)
+        return results
+
+    def admin_invited(
+        self,
+        *,
+        email: str,
+        organization_name: str,
+        redirect_url: str,
+    ) -> dict[str, str | Exception]:
+        """Send admin invitation email. No-ops (with a warning log) if the Courier
+        template isn't configured, same fallback as team_owner_invited."""
+        if not self.COURIER_TEMPLATE_ADMIN_INVITE:
+            logger.warning("COURIER_TEMPLATE_ADMIN_INVITE not configured; skipping email for %s", email)
+            return {}
+        if not self._tournaments_email_sender:
+            logger.warning("COURIER_TOURNAMENTS_AUTH_TOKEN not configured; skipping admin_invited email for %s", email)
+            return {}
+        results: dict[str, str | Exception] = {}
+        try:
+            # Same Courier workspace as team_owner_invited — the admin-invite template
+            # was created there too (separate auth token from the main workspace).
+            request_id = self._tournaments_email_sender.send_template(
+                template_id=self.COURIER_TEMPLATE_ADMIN_INVITE,
+                to_email=email,
+                data={
+                    "organization_name": organization_name,
+                    "redirect_url": redirect_url,
+                },
+            )
+            results["email"] = request_id
+        except Exception as e:
+            results["email"] = e
+            logger.exception("admin_invited: Courier send failed for %s", email)
         return results
 
     def votation_opened(self, *, user_emails: list[str], month: str) -> str:

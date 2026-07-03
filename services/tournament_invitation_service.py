@@ -60,6 +60,7 @@ class TournamentInvitationService:
         invitation = {
             "id": str(uuid.uuid4()),
             "account_id": account_id,
+            "invitation_type": "team_owner",
             "tournament_id": tournament_id,
             "tournament_team_id": tournament_team_id,
             "email": email,
@@ -74,6 +75,52 @@ class TournamentInvitationService:
         self._invitations.create(invitation)
         self._send_invitation_email(invitation)
         return invitation
+
+    def create_admin_invitation(self, *, account_id: str, email: str) -> dict:
+        """Idempotent: if a pending or accepted admin invitation already exists for this
+        (account, email), returns it without resending. Not tied to a tournament/team —
+        the resulting membership gets role="admin" on accept()."""
+        existing = [
+            r
+            for r in self._invitations.list_by_account(account_id)
+            if r.get("invitation_type") == "admin"
+            and r.get("email", "").strip().lower() == email.strip().lower()
+        ]
+        blocking = [r for r in existing if r.get("status") in ("pending", "accepted")]
+        if blocking:
+            pending = [r for r in blocking if r.get("status") == "pending"]
+            return pending[0] if pending else blocking[0]
+
+        now = self._now()
+        invitation = {
+            "id": str(uuid.uuid4()),
+            "account_id": account_id,
+            "invitation_type": "admin",
+            # tournament_id/tournament_team_id intentionally omitted (not just None) —
+            # tournament_id is a GSI key (tournament_index) expecting type S; storing an
+            # explicit NULL there fails PutItem with a GSI type-mismatch ValidationException.
+            "email": email,
+            "token": self._new_token(),
+            "status": "pending",
+            "expires_at": (now + timedelta(days=INVITATION_TTL_DAYS)).isoformat(),
+            "accepted_at": None,
+            "accepted_by_user_id": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        self._invitations.create(invitation)
+        self._send_admin_invitation_email(invitation)
+        return invitation
+
+    def _send_admin_invitation_email(self, invitation: dict) -> None:
+        account = self._accounts.get(invitation["account_id"]) or {}
+        base = os.environ.get("BASE_ACTION_URL", "https://jmanage.app").rstrip("/")
+        invite_url = f"{base}/invite/{invitation['token']}"
+        self._notifications.admin_invited(
+            email=invitation["email"],
+            organization_name=account.get("name", "tu organización"),
+            redirect_url=invite_url,
+        )
 
     def _send_invitation_email(self, invitation: dict) -> None:
         team = self._teams.get(invitation["tournament_team_id"])
@@ -146,12 +193,29 @@ class TournamentInvitationService:
         if datetime.fromisoformat(inv["expires_at"]) < self._now() and inv["status"] == "pending":
             self._invitations.update_status(inv["id"], "expired", updated_at=self._now().isoformat())
             return None
-        tournament = self._tournaments.get(inv["tournament_id"]) or {}
-        team = self._teams.get(inv["tournament_team_id"]) or {}
         account = self._accounts.get(inv["account_id"]) or {}
         existing_user = self._users.get_by_email(inv["email"])
+        invitation_type = inv.get("invitation_type", "team_owner")
+
+        if invitation_type == "admin":
+            return {
+                "invitation_type": "admin",
+                "tournament_id": None,
+                "tournament_name": None,
+                "tournament_team_id": None,
+                "team_name": None,
+                "organizer_account_name": account.get("name", ""),
+                "email": inv["email"],
+                "email_has_existing_user": bool(existing_user),
+                "status": inv["status"],
+                "expires_at": inv["expires_at"],
+            }
+
+        tournament = self._tournaments.get(inv["tournament_id"]) or {}
+        team = self._teams.get(inv["tournament_team_id"]) or {}
 
         return {
+            "invitation_type": "team_owner",
             "tournament_id": inv["tournament_id"],
             "tournament_name": tournament.get("name", ""),
             "tournament_team_id": inv["tournament_team_id"],
@@ -194,6 +258,13 @@ class TournamentInvitationService:
             self._invitations.update_status(inv["id"], "expired", updated_at=self._now().isoformat())
             raise ValueError("Invitation expired")
 
+        invitation_type = inv.get("invitation_type", "team_owner")
+        # Cognito's custom:role attribute drives the frontend's nav-role display; the
+        # membership role drives backend authorization. Kept as separate variables since
+        # team-owner invitees must keep custom:role="user" (unchanged prior behavior).
+        cognito_role = "admin" if invitation_type == "admin" else "user"
+        membership_role = "admin" if invitation_type == "admin" else "team_owner"
+
         user_id: str
 
         if authenticated_user_id and authenticated_email:
@@ -201,6 +272,10 @@ class TournamentInvitationService:
             if authenticated_email.strip().lower() != inv["email"].strip().lower():
                 raise ValueError("Authenticated user's email does not match invitation email")
             user_id = authenticated_user_id
+            if invitation_type == "admin":
+                # Promoting an existing Cognito user — custom:role is only set at
+                # user-creation time otherwise, so it needs an explicit update here too.
+                self._cognito.update_user_field(authenticated_email, "custom:role", "admin")
         else:
             # Unauthenticated path: must create a new Cognito user.
             if not password:
@@ -213,7 +288,7 @@ class TournamentInvitationService:
             # the invite form only collects credentials. Users can update later.
             resolved_name = inv["email"].split("@")[0]
             self._cognito.admin_create_confirmed_user(
-                user_email=inv["email"], name=resolved_name, password=password,
+                user_email=inv["email"], name=resolved_name, password=password, role=cognito_role,
             )
             # Source of truth for sub: admin_get_user (UserAttributes always includes sub).
             # admin_create_user's User.Attributes is unreliable across pool configurations.
@@ -243,21 +318,32 @@ class TournamentInvitationService:
             m.get("workspace_id") == default_workspace for m in existing_memberships
         )
         if has_membership:
-            logger.info(
-                "accept: user %s already has a membership on account %s / workspace %s — "
-                "skipping create_membership to preserve existing role",
-                user_id,
-                inv["account_id"],
-                default_workspace,
-            )
+            if invitation_type == "admin":
+                # An explicit admin invite always grants the role, even for a user who
+                # already has some other membership (e.g. an existing team owner).
+                self._memberships.update_role(
+                    user_id=user_id,
+                    account_id=inv["account_id"],
+                    workspace_id=default_workspace,
+                    role="admin",
+                )
+            else:
+                logger.info(
+                    "accept: user %s already has a membership on account %s / workspace %s — "
+                    "skipping create_membership to preserve existing role",
+                    user_id,
+                    inv["account_id"],
+                    default_workspace,
+                )
         else:
             self._memberships.create_membership(
                 user_id=user_id,
                 account_id=inv["account_id"],
                 workspace_id=default_workspace,
-                role="team_owner",
+                role=membership_role,
             )
-        self._teams.update(inv["tournament_team_id"], {"owner_user_id": user_id})
+        if invitation_type == "team_owner":
+            self._teams.update(inv["tournament_team_id"], {"owner_user_id": user_id})
         now = self._now()
         self._invitations.update_status(
             inv["id"], "accepted",
@@ -267,8 +353,9 @@ class TournamentInvitationService:
         )
         return {
             "account_id": inv["account_id"],
-            "tournament_id": inv["tournament_id"],
-            "tournament_team_id": inv["tournament_team_id"],
+            "invitation_type": invitation_type,
+            "tournament_id": inv.get("tournament_id"),
+            "tournament_team_id": inv.get("tournament_team_id"),
         }
 
     def list_for_tournament(self, *, account_id: str, tournament_id: str) -> list[dict]:

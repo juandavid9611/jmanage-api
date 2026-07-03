@@ -93,6 +93,7 @@ class TournamentService:
             "end_date": body.end_date or "",
             "location": body.location or "",
             "created_at": datetime.utcnow().isoformat(),
+            "payments_enabled": body.payments_enabled,
         }
         self.repo.put(item)
         return self._resolve_logo(item)
