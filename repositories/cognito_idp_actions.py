@@ -100,7 +100,7 @@ class CognitoIdentityProviderWrapper:
                 raise
         return response
 
-    def admin_create_confirmed_user(self, *, user_email: str, name: str, password: str) -> dict:
+    def admin_create_confirmed_user(self, *, user_email: str, name: str, password: str, role: str = "user") -> dict:
         """Create a Cognito user already confirmed and email-verified, with a permanent
         password. Used by the invitation-accept flow where the magic link proves email
         ownership and we don't want the standard sign-up confirmation roundtrip.
@@ -117,7 +117,7 @@ class CognitoIdentityProviderWrapper:
                     {"Name": "email", "Value": user_email},
                     {"Name": "email_verified", "Value": "true"},
                     {"Name": "name", "Value": name},
-                    {"Name": "custom:role", "Value": "user"},
+                    {"Name": "custom:role", "Value": role},
                 ],
                 MessageAction="SUPPRESS",
             )
