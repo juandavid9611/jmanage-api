@@ -6,6 +6,7 @@ class AccountSettings(BaseModel):
     timezone: str | None = "America/Bogota"
     language: str | None = "es"
     currency: str | None = "COP"
+    account_type: str | None = "club"  # "club" (full feature set) or "tournament" (torneos-only nav)
 
 
 class AccountSubscription(BaseModel):
