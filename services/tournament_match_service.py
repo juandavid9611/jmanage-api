@@ -24,7 +24,7 @@ _STATUS_TRANSITIONS = {
     "scheduled": {"live", "postponed"},
     "live": {"finished"},
     "postponed": {"scheduled"},
-    # "finished" is terminal unless admin force-override
+    "finished": {"live"},  # admin "reopen" — reverses materialized stats, see _apply_match_outcome
 }
 
 
