@@ -183,13 +183,15 @@ def match_outcome_delta(
     - W/D/L + goals_for/against + points + form: only applied if it's a
       group-stage match (no `round`). Tournament `matches_played` and goals
       count for all matches.
-    - `form` is encoded in the delta as a single-element list with the
-      outcome to append (e.g. ["W"]) for `sign=+1`. The caller is
-      responsible for the rolling window (we don't know which entry to
-      remove for `sign=-1` without context).
+    - `form` entries are tagged with the match's id (e.g.
+      `{"match_id": ..., "result": "W"}`) for `sign=+1`. `sign=-1` emits
+      `"form_remove"` instead of a form entry, so `apply_delta` can find
+      and strip the exact entry this match previously added — this keeps
+      reopen/re-finish cycles from leaving stale form entries behind.
     """
     home_id = match.get("home_team_id")
     away_id = match.get("away_team_id")
+    match_id = match.get("id")
     sh = match.get("score_home")
     sa = match.get("score_away")
     s = int(sign)
@@ -243,25 +245,30 @@ def match_outcome_delta(
         home["points"] += ppw * s
         away["lost"] += 1 * s
         away["points"] += ppl * s
-        if s == 1:
-            home["form"] = ["W"]
-            away["form"] = ["L"]
+        home_result, away_result = "W", "L"
     elif sh < sa:
         away["won"] += 1 * s
         away["points"] += ppw * s
         home["lost"] += 1 * s
         home["points"] += ppl * s
-        if s == 1:
-            home["form"] = ["L"]
-            away["form"] = ["W"]
+        home_result, away_result = "L", "W"
     else:
         home["drawn"] += 1 * s
         away["drawn"] += 1 * s
         home["points"] += ppd * s
         away["points"] += ppd * s
-        if s == 1:
-            home["form"] = ["D"]
-            away["form"] = ["D"]
+        home_result, away_result = "D", "D"
+
+    # `form` entries are tagged with `match_id` so a reversal (sign=-1, e.g.
+    # reopening a finished match) can remove the exact entry it added
+    # instead of leaving it stranded — see `apply_delta`'s "form_remove"
+    # handling. Only sign=+1 appends; sign=-1 requests a removal instead.
+    if s == 1:
+        home["form"] = [{"match_id": match_id, "result": home_result}]
+        away["form"] = [{"match_id": match_id, "result": away_result}]
+    else:
+        home["form_remove"] = match_id
+        away["form_remove"] = match_id
 
     return {
         "home_team_id": home_id,
@@ -278,9 +285,24 @@ def match_outcome_delta(
 def apply_delta(stats: dict[str, Any] | None, delta: dict[str, Any]) -> dict[str, Any]:
     """Add `delta` into `stats` (creates a new dict). Numeric fields are
     summed; list fields (form) are appended and tail-trimmed to length 5.
-    Returns the merged dict; never mutates inputs."""
+    Returns the merged dict; never mutates inputs.
+
+    `"form_remove"` is a special, non-additive key: instead of being summed
+    or appended, it strips the form entry tagged with that match_id (see
+    `match_outcome_delta`'s reversal path) so reopening a finished match
+    doesn't leave a stale form entry behind once the outcome is reapplied."""
     result = dict(stats or {})
+    remove_match_id = delta.get("form_remove")
+    if remove_match_id is not None:
+        current_form = result.get("form") or []
+        result["form"] = [
+            e for e in current_form
+            if not (isinstance(e, dict) and e.get("match_id") == remove_match_id)
+        ]
+
     for key, value in delta.items():
+        if key == "form_remove":
+            continue
         current = result.get(key, 0 if not isinstance(value, list) else [])
         if isinstance(value, list):
             merged = (current or []) + value

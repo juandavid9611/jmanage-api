@@ -102,7 +102,10 @@ class StandingsService:
             "goals_against": s.get("goals_against", 0),
             "goal_difference": gd,
             "points": s.get("points", 0),
-            "form": list(s.get("form") or [])[-5:],
+            "form": [
+                e.get("result") if isinstance(e, dict) else e
+                for e in list(s.get("form") or [])[-5:]
+            ],
         }
 
     @staticmethod
