@@ -44,6 +44,8 @@ class TournamentMatchEventService:
         self.tournament_repo = tournament_repo
 
     def create_event(self, match_id: str, body: CreateMatchEvent) -> dict[str, Any]:
+        self._require_live_match(match_id)
+
         event_index = body.event_index
         if event_index is None:
             existing = self.repo.list_by_match(match_id)
@@ -80,6 +82,7 @@ class TournamentMatchEventService:
         existing = self.repo.get(event_id)
         if not existing:
             return None
+        self._require_live_match(existing["match_id"])
         updates = body.dict(exclude_unset=True, exclude_none=True)
         if not updates:
             return existing
@@ -102,6 +105,7 @@ class TournamentMatchEventService:
         existing = self.repo.get(event_id)
         if not existing:
             return False
+        self._require_live_match(existing["match_id"])
 
         self._apply_event(existing, sign=-1)
         self.repo.delete(event_id)
@@ -160,6 +164,23 @@ class TournamentMatchEventService:
             )
 
     # ── Helpers ──────────────────────────────────────────────────────
+
+    def _require_live_match(self, match_id: str) -> None:
+        """Events may only be added/edited/deleted while the match is
+        `live`. Once a match is `finished`, its W/D/L/points are
+        materialized on the team via match_outcome_delta — editing events
+        at that point would drift the match's score (via _sync_match_score)
+        without ever updating those materialized stats. Admins must use
+        "reopen" to bring the match back to `live` before correcting events;
+        that flow properly reverses/reapplies the outcome delta."""
+        if not self.match_repo:
+            return
+        match = self.match_repo.get(match_id)
+        if match and match.get("status") != "live":
+            raise ValueError(
+                "Match events can only be edited while the match is in progress. "
+                "Reopen the match first."
+            )
 
     def _sync_match_score(self, match_id: str) -> None:
         """Recompute score from all events and update the match record."""

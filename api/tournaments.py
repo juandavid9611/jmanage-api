@@ -827,7 +827,10 @@ async def create_event(
     body: CreateMatchEvent,
     svc: TournamentMatchEventService = Depends(get_match_event_service),
 ):
-    return svc.create_event(match_id, body)
+    try:
+        return svc.create_event(match_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.patch("/matches/{match_id}/events/{event_id}", dependencies=[Depends(ADMIN)])
@@ -837,7 +840,10 @@ async def update_event(
     body: PatchMatchEvent,
     svc: TournamentMatchEventService = Depends(get_match_event_service),
 ):
-    result = svc.update_event(event_id, body)
+    try:
+        result = svc.update_event(event_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not result:
         raise HTTPException(status_code=404, detail="Event not found")
     return result
@@ -849,7 +855,11 @@ async def delete_event(
     event_id: str,
     svc: TournamentMatchEventService = Depends(get_match_event_service),
 ):
-    if not svc.delete_event(event_id):
+    try:
+        deleted = svc.delete_event(event_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not deleted:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"deleted": event_id}
 
