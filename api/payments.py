@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from auth import PermissionChecker, WorkspacePermissionChecker, get_account_id, get_current_user, get_account_role
 from api.schemas.files import FileSpec
 from di import (
+    get_account_service,
     get_match_event_service,
     get_match_service,
     get_payment_request_service,
@@ -14,6 +15,7 @@ from di import (
 )
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query
 from api.schemas.payments import BulkPutPaymentRequest
+from services.account_service import AccountService
 from services.payment_request_service import PaymentRequestService
 from services.tournament_match_event_service import TournamentMatchEventService
 from services.tournament_match_service import TournamentMatchService
@@ -217,6 +219,7 @@ async def create_tournament_match_charges(
     team_svc: TournamentTeamService = Depends(get_tournament_team_service),
     user_svc: UserService = Depends(get_user_service),
     pr_svc: PaymentRequestService = Depends(get_payment_request_service),
+    account_svc: AccountService = Depends(get_account_service),
 ):
     tournament = t_svc.get_tournament(body.tournamentId, account_id)
     if not tournament:
@@ -230,6 +233,15 @@ async def create_tournament_match_charges(
     if match.get("status") != "finished":
         raise HTTPException(status_code=400, detail="Match is not finished")
 
+    # Charges must land in the account's real workspace (same convention as
+    # tournament_invitation_service._accept: "group" everywhere else means
+    # workspace_id, and tournaments have no workspace_id of their own), so the
+    # normal Pagos/Pagos Totales pages pick them up without a tournament-specific view.
+    account = account_svc.get(account_id)
+    workspace_id = (account.get("settings") or {}).get("default_workspace") if account else None
+    if not workspace_id:
+        raise HTTPException(status_code=400, detail="Account has no default workspace configured")
+
     rules = tournament.get("rules") or {}
     yellow_fee = int(rules.get("yellow_card_fee") or 0)
     red_fee = int(rules.get("red_card_fee") or 0)
@@ -237,7 +249,7 @@ async def create_tournament_match_charges(
     events = ev_svc.list_events(body.matchId)
     card_events = [ev for ev in events if ev.get("type") in (_CARD_YELLOW_TYPES | _CARD_RED_TYPES)]
 
-    existing_prs = pr_svc.list_payment_requests(account_id, group=body.tournamentId)
+    existing_prs = pr_svc.list_payment_requests(account_id, group=workspace_id)
     charged_event_ids = {pr.get("reference") for pr in existing_prs if pr.get("reference")}
 
     today = datetime.utcnow().date().isoformat()
@@ -311,7 +323,7 @@ async def create_tournament_match_charges(
             concept=f"{card_label} - {tournament_name}",
             description=f"Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
             category="tournament_fine",
-            group=body.tournamentId,
+            group=workspace_id,
             paymentRequestTo=[{"id": recipient_id, "name": recipient_name, "email": recipient_email}],
             userPrice=fee,
             reference=ev["id"],
