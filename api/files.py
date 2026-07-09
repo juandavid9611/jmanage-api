@@ -10,7 +10,7 @@ from services.file_service import FileService
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.get("", dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
+@router.get("", dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user", "team_owner"]))])
 async def list_files(
     account_id: str = Depends(get_account_id),
     svc: FileService = Depends(get_file_service)
@@ -30,7 +30,7 @@ async def create_file(
     return file
 
 
-@router.get("/{file_id}", dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
+@router.get("/{file_id}", dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user", "team_owner"]))])
 async def get_file(
     file_id: str,
     account_id: str = Depends(get_account_id),

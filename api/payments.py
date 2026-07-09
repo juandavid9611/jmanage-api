@@ -28,7 +28,7 @@ from services.user_service import UserService
 
 router = APIRouter(prefix="/payment_requests", tags=["payment_requests"])
 
-@router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
+@router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user', 'team_owner']))])
 async def list_payment_requests(
     user_id: str | None = None, 
     workspace_id: str | None = None,
@@ -69,7 +69,7 @@ async def create_payment_requests(
 
 @router.get(
     "/{payment_request_id}",
-    dependencies=[Depends(PermissionChecker(required_permissions=['user', 'admin']))]
+    dependencies=[Depends(PermissionChecker(required_permissions=['user', 'admin', 'team_owner']))]
 )
 async def get_payment_request(
     payment_request_id: str,
@@ -137,7 +137,7 @@ async def delete_payment_request(
 
 @router.post(
     "/{payment_request_id}/generate-presigned-urls",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin', 'team_owner']))]
 )
 async def generate_payment_request_presigned_urls(
     payment_request_id: str,
@@ -168,7 +168,7 @@ async def generate_payment_request_presigned_urls(
 
 @router.post(
     "/{payment_request_id}/request_approval",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin', 'team_owner']))]
 )
 async def request_payment_request_approval(
     payment_request_id: str,
