@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+from api.schemas.users import UserStatus
+
 logger = logging.getLogger(__name__)
 
 INVITATION_TTL_DAYS = 14
@@ -298,7 +300,12 @@ class TournamentInvitationService:
             if not user_id:
                 raise ValueError("Could not resolve Cognito sub for newly created user")
             logger.info("accept: created Cognito user %s for invitation %s", user_id, inv["id"])
-            self._users.create({"id": user_id, "email": inv["email"], "name": resolved_name})
+            self._users.create({
+                "id": user_id,
+                "email": inv["email"],
+                "name": resolved_name,
+                "user_status": UserStatus.ACTIVE,
+            })
             # Frontend signs the user in via Amplify (SRP) after this returns — no need
             # for an API-side admin sign-in, which would require ADMIN_USER_PASSWORD_AUTH
             # on the Cognito client and isn't enabled by default.
