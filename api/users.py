@@ -39,6 +39,36 @@ def my_team_owner_teams(
     return result
 
 
+@router.get("/team-owners", dependencies=[Depends(PermissionChecker(["admin"]))])
+def list_team_owner_teams(
+    account_id: str = Depends(get_account_id),
+    tt_repo: TournamentTeamRepo = Depends(lambda: TournamentTeamRepo()),
+    t_repo: TournamentRepo = Depends(lambda: TournamentRepo()),
+):
+    """Bulk version of /me/team-owner/teams — every team's owner, for the Usuarios
+    list on tournament accounts (team ownership lives on the team record, not the
+    user record, so this has to be resolved from the team side)."""
+    tournaments = t_repo.list_by_account(account_id)
+    result = []
+    for tournament in tournaments:
+        tournament_id = tournament.get("id")
+        if not tournament_id:
+            continue
+        teams = tt_repo.list_by_tournament(tournament_id)
+        for team in teams:
+            owner_user_id = team.get("owner_user_id")
+            if not owner_user_id:
+                continue
+            result.append({
+                "owner_user_id": owner_user_id,
+                "tournament_id": tournament_id,
+                "tournament_name": tournament.get("name"),
+                "tournament_team_id": team["id"],
+                "team_name": team.get("name"),
+            })
+    return result
+
+
 @router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def list_users(
     workspace_id: str = Query(None), 
