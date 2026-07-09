@@ -39,7 +39,7 @@ def my_team_owner_teams(
     return result
 
 
-@router.get("/team-owners", dependencies=[Depends(PermissionChecker(["admin"]))])
+@router.get("/team-owners", dependencies=[Depends(PermissionChecker(["admin", "user"]))])
 def list_team_owner_teams(
     account_id: str = Depends(get_account_id),
     tt_repo: TournamentTeamRepo = Depends(lambda: TournamentTeamRepo()),
