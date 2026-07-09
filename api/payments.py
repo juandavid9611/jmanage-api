@@ -9,6 +9,7 @@ from di import (
     get_match_event_service,
     get_match_service,
     get_payment_request_service,
+    get_tournament_player_service,
     get_tournament_service,
     get_tournament_team_service,
     get_user_service,
@@ -19,6 +20,7 @@ from services.account_service import AccountService
 from services.payment_request_service import PaymentRequestService
 from services.tournament_match_event_service import TournamentMatchEventService
 from services.tournament_match_service import TournamentMatchService
+from services.tournament_player_service import TournamentPlayerService
 from services.tournament_service import TournamentService
 from services.tournament_team_service import TournamentTeamService
 from services.user_service import UserService
@@ -220,6 +222,7 @@ async def create_tournament_match_charges(
     user_svc: UserService = Depends(get_user_service),
     pr_svc: PaymentRequestService = Depends(get_payment_request_service),
     account_svc: AccountService = Depends(get_account_service),
+    player_svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
     tournament = t_svc.get_tournament(body.tournamentId, account_id)
     if not tournament:
@@ -261,6 +264,12 @@ async def create_tournament_match_charges(
         team = team_svc.get_team(team_id)
         if team:
             team_cache[team_id] = team
+
+    player_cache: dict[str, dict] = {}
+    for player_id in {ev.get("player_id") for ev in card_events if ev.get("player_id")}:
+        player = player_svc.repo.get(player_id)
+        if player:
+            player_cache[player_id] = player
 
     # Build recipient info per team.
     # Priority: owner_user_id (invitation-accepted) → contact_email user lookup → contact_email direct.
@@ -316,12 +325,13 @@ async def create_tournament_match_charges(
         away_team = team_cache.get(match.get("away_team_id", ""))
         home_name = (home_team or {}).get("name") or match.get("home_team_id", "")
         away_name = (away_team or {}).get("name") or match.get("away_team_id", "")
+        player_name = (player_cache.get(ev.get("player_id")) or {}).get("name") or "Jugador sin nombre"
 
         bulk_item = BulkPutPaymentRequest(
             createDate=today,
             dueDate=due,
-            concept=f"{card_label} - {tournament_name}",
-            description=f"Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
+            concept=f"{card_label} - {player_name} ({team.get('name', 'Equipo')})",
+            description=f"{tournament_name} - Partido {match.get('date', '')[:10]}: {home_name} vs {away_name}",
             category="tournament_fine",
             group=workspace_id,
             paymentRequestTo=[{"id": recipient_id, "name": recipient_name, "email": recipient_email}],
