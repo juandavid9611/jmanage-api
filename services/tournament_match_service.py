@@ -143,6 +143,9 @@ class TournamentMatchService:
                 sign=-1 if was_finished else +1,
             )
 
+        if "status" in updates and existing.get("matchweek"):
+            self._advance_current_matchweek(existing.get("tournament_id"))
+
         return result
 
     def _compute_score(self, match_id: str, home_team_id: str, away_team_id: str) -> tuple[int, int]:
@@ -208,6 +211,31 @@ class TournamentMatchService:
         t_current = tournament.get("stats") or default_tournament_stats()
         merged = apply_delta(t_current, d["tournament_delta"])
         self.tournament_repo.update_stats(tournament_id, update_average_goals_per_match(merged))
+
+    def _advance_current_matchweek(self, tournament_id: str | None) -> None:
+        """Recompute the tournament's `current_matchweek` as the earliest
+        matchweek that still has a non-finished match, so the tournaments
+        list reflects real progress instead of freezing at the matchweek
+        set when the schedule was generated. Once every matchweek is
+        finished, pins it to the last one (knockout phase takes over from
+        there on the frontend)."""
+        if not (tournament_id and self.tournament_repo):
+            return
+
+        matches = self.repo.list_by_tournament(tournament_id)
+        matchweeks = [m.get("matchweek") for m in matches if m.get("matchweek")]
+        if not matchweeks:
+            return
+
+        unfinished = [
+            m.get("matchweek") for m in matches
+            if m.get("matchweek") and m.get("status") != "finished"
+        ]
+        new_current = min(unfinished) if unfinished else max(matchweeks)
+
+        tournament = self.tournament_repo.get(tournament_id) or {}
+        if tournament.get("current_matchweek") != new_current:
+            self.tournament_repo.update(tournament_id, {"current_matchweek": new_current})
 
     # ── Fixture Generation ───────────────────────────────────────────
 
