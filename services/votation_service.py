@@ -1,5 +1,6 @@
+import calendar
 from uuid import uuid4
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -62,16 +63,22 @@ class VotationService:
     def preview_candidates(
         self,
         workspace_id: str,
-        month: str,
         min_pct: int,
         account_id: str,
+        month: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Compute candidate list from training tour data.
-        month format: "YYYY-MM" (e.g. "2026-03")
+        Compute candidate list from training tour data over a date window.
+        Pass either `month` ("YYYY-MM") or both `start_date`/`end_date` ("YYYY-MM-DD").
         """
-        year, month_num = map(int, month.split("-"))
-        month_index = month_num - 1  # 0-based
+        if month is not None:
+            year, month_num = map(int, month.split("-"))
+            window_start, window_end = self._month_bounds(year, month_num)
+        else:
+            window_start = date.fromisoformat(start_date)
+            window_end = date.fromisoformat(end_date)
 
         training_tours = list(
             self.tour_repo.list_filtered(account_id, group=workspace_id, tour_type="training")
@@ -80,23 +87,23 @@ class VotationService:
             self.tour_repo.list_filtered(account_id, group=workspace_id, tour_type="match")
         )
 
-        month_tours = [
+        window_tours = [
             t for t in training_tours
-            if self._matches_month(t.get("available"), year, month_index)
+            if self._in_window(t.get("available"), window_start, window_end)
         ]
-        month_match_tours = [
+        window_match_tours = [
             t for t in match_tours
-            if self._matches_month(t.get("available"), year, month_index)
+            if self._in_window(t.get("available"), window_start, window_end)
         ]
 
-        if not month_tours:
+        if not window_tours:
             return []
 
-        total = len(month_tours)
-        total_matches = len(month_match_tours)
+        total = len(window_tours)
+        total_matches = len(window_match_tours)
         player_map: dict[str, dict] = {}
 
-        for session in month_tours:
+        for session in window_tours:
             bookers = session.get("bookers") or {}
             for booker in bookers.values():
                 pid = booker.get("id")
@@ -118,7 +125,7 @@ class VotationService:
                 player_map[pid]["goals"] += int(booker.get("goals") or 0)
                 player_map[pid]["assists"] += int(booker.get("assists") or 0)
 
-        for session in month_match_tours:
+        for session in window_match_tours:
             bookers = session.get("bookers") or {}
             for booker in bookers.values():
                 pid = booker.get("id")
@@ -159,18 +166,21 @@ class VotationService:
     def create_votation(
         self,
         workspace_id: str,
-        month: str,
         min_pct: int,
         candidates: list[dict],
         created_by: str,
         account_id: str,
+        period_type: str = "month",
+        month: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
         item = {
             "id": str(uuid4()),
             "account_id": account_id,
             "workspace_id": workspace_id,
             "status": "open",
-            "month": month,
+            "period_type": period_type,
             "min_pct": min_pct,
             "candidates": candidates,
             "votes": {},
@@ -178,6 +188,11 @@ class VotationService:
             "created_at": datetime.utcnow().isoformat(),
             "created_by": created_by,
         }
+        if period_type == "semester":
+            item["start_date"] = start_date
+            item["end_date"] = end_date
+        else:
+            item["month"] = month
         self.repo.put(item)
 
         # Notify workspace members
@@ -187,7 +202,10 @@ class VotationService:
             if user_emails:
                 self.notifier.votation_opened(
                     user_emails=user_emails,
+                    period_type=period_type,
                     month=month,
+                    start_date=start_date,
+                    end_date=end_date,
                 )
         except Exception:
             pass  # notification failure should not block creation
@@ -298,12 +316,13 @@ class VotationService:
         tied_ids = set(original.get("tied_candidate_ids") or [])
         finalists = [c for c in (original.get("candidates") or []) if c["id"] in tied_ids]
 
+        period_type = original.get("period_type", "month")
         new_item = {
             "id": str(uuid4()),
             "account_id": account_id,
             "workspace_id": workspace_id,
             "status": "open",
-            "month": original["month"],
+            "period_type": period_type,
             "min_pct": 0,
             "candidates": finalists,
             "votes": {},
@@ -312,6 +331,11 @@ class VotationService:
             "created_by": created_by,
             "parent_votation_id": votation_id,
         }
+        if period_type == "semester":
+            new_item["start_date"] = original.get("start_date")
+            new_item["end_date"] = original.get("end_date")
+        else:
+            new_item["month"] = original.get("month")
         self.repo.put(new_item)
         self.repo.set_tiebreaker_id(votation_id, account_id, new_item["id"])
         return new_item
@@ -319,8 +343,13 @@ class VotationService:
     # ── Internal helpers ─────────────────────────────────────────────────
 
     @staticmethod
-    def _matches_month(available: Any, year: int, month_index: int) -> bool:
+    def _month_bounds(year: int, month_num: int) -> tuple[date, date]:
+        last_day = calendar.monthrange(year, month_num)[1]
+        return date(year, month_num, 1), date(year, month_num, last_day)
+
+    @staticmethod
+    def _in_window(available: Any, window_start: date, window_end: date) -> bool:
         d = _parse_start_date(available)
         if not d:
             return False
-        return d.year == year and d.month - 1 == month_index
+        return window_start <= d.date() <= window_end

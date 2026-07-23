@@ -22,12 +22,21 @@ router = APIRouter(prefix="/votations", tags=["votations"])
 @router.get("/preview", dependencies=[Depends(ADMIN)])
 async def preview_candidates(
     workspace_id: str = Query(...),
-    month: str = Query(..., description="YYYY-MM"),
+    period_type: str = Query("month"),
+    month: str | None = Query(None, description="YYYY-MM"),
+    start_date: str | None = Query(None, description="YYYY-MM-DD"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD"),
     min_pct: int = Query(70, ge=0, le=100),
     account_id: str = Depends(get_account_id),
     svc: VotationService = Depends(get_votation_service),
 ):
-    return svc.preview_candidates(workspace_id, month, min_pct, account_id)
+    if period_type == "semester":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="start_date and end_date are required for semester preview")
+        return svc.preview_candidates(workspace_id, min_pct, account_id, start_date=start_date, end_date=end_date)
+    if not month:
+        raise HTTPException(status_code=400, detail="month is required for month preview")
+    return svc.preview_candidates(workspace_id, min_pct, account_id, month=month)
 
 
 @router.get("", dependencies=[Depends(ALL_ROLES)])
@@ -48,11 +57,14 @@ async def create_votation(
 ):
     return svc.create_votation(
         workspace_id=body.workspace_id,
-        month=body.month,
         min_pct=body.min_pct,
         candidates=[c.model_dump() for c in body.candidates],
         created_by=user.get("sub", ""),
         account_id=account_id,
+        period_type=body.period_type,
+        month=body.month,
+        start_date=body.start_date,
+        end_date=body.end_date,
     )
 
 
