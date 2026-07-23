@@ -419,11 +419,25 @@ class Notifications:
             logger.exception("admin_invited: Courier send failed for %s", email)
         return results
 
-    def votation_opened(self, *, user_emails: list[str], month: str) -> str:
+    def votation_opened(
+        self,
+        *,
+        user_emails: list[str],
+        period_type: str = "month",
+        month: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> str:
+        if period_type == "semester":
+            title = "¡Vota por el jugador del semestre!"
+            period_label = f"{start_date} a {end_date}"
+        else:
+            title = "¡Vota por el jugador del mes!"
+            period_label = month
         return self._send_bulk_in_app_notification(
             user_emails=user_emails,
-            title="¡Vota por el jugador del mes!",
-            content=f"La votación de {month} está abierta. Entra y vota por tu favorito.",
+            title=title,
+            content=f"La votación de {period_label} está abierta. Entra y vota por tu favorito.",
             category="votation_opened",
             action_url_path="dashboard/votaciones",
         )
