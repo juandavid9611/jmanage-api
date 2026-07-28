@@ -45,6 +45,7 @@ class TournamentMatchEventService:
 
     def create_event(self, match_id: str, body: CreateMatchEvent) -> dict[str, Any]:
         self._require_live_match(match_id)
+        self._validate_players(body.type.value, body.player_id, body.assist_player_id)
 
         event_index = body.event_index
         if event_index is None:
@@ -86,6 +87,12 @@ class TournamentMatchEventService:
         updates = body.dict(exclude_unset=True, exclude_none=True)
         if not updates:
             return existing
+
+        self._validate_players(
+            updates.get("type", existing.get("type")),
+            updates.get("player_id", existing.get("player_id")),
+            updates.get("assist_player_id", existing.get("assist_player_id")),
+        )
 
         # Reverse the old event's contribution before persisting the change,
         # then apply the new one.
@@ -164,6 +171,19 @@ class TournamentMatchEventService:
             )
 
     # ── Helpers ──────────────────────────────────────────────────────
+
+    def _validate_players(
+        self, event_type: str, player_id: str | None, assist_player_id: str | None
+    ) -> None:
+        """A substitution needs a distinct player coming in; any other
+        event pairing a player with an assist/incoming player must not
+        reuse the same player for both."""
+        if event_type == "substitution" and not assist_player_id:
+            raise ValueError(
+                "Substitution events require both the player going out and the player coming in."
+            )
+        if assist_player_id and assist_player_id == player_id:
+            raise ValueError("The two players in this event must be different.")
 
     def _require_live_match(self, match_id: str) -> None:
         """Events may only be added/edited/deleted while the match is
