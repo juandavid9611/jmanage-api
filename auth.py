@@ -206,6 +206,15 @@ class PermissionChecker:
             )
         return True
 
+class RequireAnyAccountAdmin:
+    def __call__(self, user_accounts: dict = Depends(get_user_accounts)) -> bool:
+        if not any(role == 'admin' for role in user_accounts['accounts_roles'].values()):
+            raise HTTPException(
+                status_code=HTTP_401_UNAUTHORIZED,
+                detail='Admin role required on at least one account.',
+            )
+        return True
+
 class WorkspacePermissionChecker:
     """Check if user has required permissions for a specific workspace"""
     

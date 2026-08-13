@@ -43,6 +43,8 @@ from repositories.votation_repo_ddb import VotationRepo
 from services.votation_service import VotationService
 from services.tournament_invitation_service import TournamentInvitationService
 from repositories.tournament_invitation_repo_ddb import TournamentInvitationRepo
+from repositories.donation_repo_ddb import DonationRepo
+from services.donation_service import DonationService
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -223,3 +225,7 @@ def get_tournament_stats_service() -> TournamentStatsService:
     team_repo = TournamentTeamRepo()
     player_repo = TournamentPlayerRepo()
     return TournamentStatsService(match_repo, event_repo, team_repo, player_repo)
+
+
+def get_donation_service() -> DonationService:
+    return DonationService(DonationRepo())
