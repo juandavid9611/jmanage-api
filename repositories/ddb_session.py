@@ -75,3 +75,7 @@ def votation_table():
 
 def tournament_invitation_table():
     return dynamodb.Table(os.getenv("TOURNAMENT_INVITATION_TABLE_NAME"))
+
+
+def donation_table():
+    return dynamodb.Table(os.getenv("DONATION_TABLE_NAME"))
