@@ -102,6 +102,15 @@ class TestTournamentMatchNotificationService(unittest.TestCase):
 
         self.notifications.match_started.assert_not_called()
 
+    def test_none_tournament_skips_send_without_raising(self):
+        self.service.match_started(
+            tournament=None,
+            home_team_name="Halcones",
+            away_team_name="Tigres",
+        )  # must not raise
+
+        self.notifications.match_started.assert_not_called()
+
     def test_swallows_exception_from_notifications_send(self):
         self.notifications.match_started.side_effect = Exception("onesignal down")
 

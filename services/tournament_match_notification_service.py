@@ -86,7 +86,7 @@ class TournamentMatchNotificationService:
     def _broadcast(
         self, tournament: dict[str, Any], send: Callable[[list[str]], Any]
     ) -> None:
-        tournament_id = tournament.get("id")
+        tournament_id = (tournament or {}).get("id")
         if not tournament_id:
             return
         try:
