@@ -1,5 +1,6 @@
 """Business logic for Match management including fixture generation."""
 
+import logging
 from uuid import uuid4
 from datetime import datetime, timedelta
 from typing import Any
@@ -17,6 +18,9 @@ from services.tournament_aggregator import (
     match_outcome_delta,
     update_average_goals_per_match,
 )
+from services.tournament_match_notification_service import TournamentMatchNotificationService
+
+logger = logging.getLogger(__name__)
 
 
 # Valid status transitions
@@ -35,11 +39,13 @@ class TournamentMatchService:
         event_repo: TournamentMatchEventRepo | None = None,
         team_repo: TournamentTeamRepo | None = None,
         tournament_repo: TournamentRepo | None = None,
+        match_notifications: "TournamentMatchNotificationService | None" = None,
     ):
         self.repo = repo
         self.event_repo = event_repo
         self.team_repo = team_repo
         self.tournament_repo = tournament_repo
+        self.match_notifications = match_notifications
 
     # ── CRUD ─────────────────────────────────────────────────────────
 
@@ -142,9 +148,17 @@ class TournamentMatchService:
                 existing if was_finished else (result or existing),
                 sign=-1 if was_finished else +1,
             )
+            if is_finished:
+                self._notify_match_finished(result or existing)
 
         if "status" in updates and existing.get("matchweek"):
             self._advance_current_matchweek(existing.get("tournament_id"))
+
+        # Only a genuine kickoff (not an admin "reopen" from finished) counts
+        # as the match starting. Kept last so a notification failure can
+        # never prevent other write-completion side effects above.
+        if old_status in ("scheduled", "postponed") and new_status == "live":
+            self._notify_match_started(result or existing)
 
         return result
 
@@ -211,6 +225,38 @@ class TournamentMatchService:
         t_current = tournament.get("stats") or default_tournament_stats()
         merged = apply_delta(t_current, d["tournament_delta"])
         self.tournament_repo.update_stats(tournament_id, update_average_goals_per_match(merged))
+
+    def _notify_match_started(self, match: dict[str, Any]) -> None:
+        try:
+            if not (self.match_notifications and self.tournament_repo and self.team_repo):
+                return
+            tournament = self.tournament_repo.get(match.get("tournament_id")) or {}
+            home = self.team_repo.get(match.get("home_team_id")) or {}
+            away = self.team_repo.get(match.get("away_team_id")) or {}
+            self.match_notifications.match_started(
+                tournament=tournament,
+                home_team_name=home.get("name", ""),
+                away_team_name=away.get("name", ""),
+            )
+        except Exception:
+            logger.exception("Failed to send match-started notification for match %s", match.get("id"))
+
+    def _notify_match_finished(self, match: dict[str, Any]) -> None:
+        try:
+            if not (self.match_notifications and self.tournament_repo and self.team_repo):
+                return
+            tournament = self.tournament_repo.get(match.get("tournament_id")) or {}
+            home = self.team_repo.get(match.get("home_team_id")) or {}
+            away = self.team_repo.get(match.get("away_team_id")) or {}
+            self.match_notifications.match_finished(
+                tournament=tournament,
+                home_team_name=home.get("name", ""),
+                away_team_name=away.get("name", ""),
+                score_home=match.get("score_home", 0),
+                score_away=match.get("score_away", 0),
+            )
+        except Exception:
+            logger.exception("Failed to send match-finished notification for match %s", match.get("id"))
 
     def _advance_current_matchweek(self, tournament_id: str | None) -> None:
         """Recompute the tournament's `current_matchweek` as the earliest
