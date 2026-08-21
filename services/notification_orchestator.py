@@ -29,6 +29,18 @@ class Notifications:
     COURIER_TEMPLATE_ORDER_CREATED: str | None = None
     COURIER_TEMPLATE_ORDER_STATUS_CHANGED: str | None = None
 
+    # ── Match notification copy ─────────────────────────────────────
+    _MATCH_EVENT_TEMPLATES: dict[str, tuple[str, str]] = {
+        "goal": ("¡Gol!", "Gol de {player_name} ({team_name}) al minuto {minute}."),
+        "penalty_scored": ("¡Gol!", "Gol de {player_name} ({team_name}) al minuto {minute}."),
+        "own_goal": ("Autogol", "Autogol de {player_name} ({team_name}) al minuto {minute}."),
+        "yellow_card": ("Tarjeta amarilla", "Amarilla para {player_name} ({team_name}) al minuto {minute}."),
+        "second_yellow": ("Tarjeta amarilla", "Amarilla para {player_name} ({team_name}) al minuto {minute}."),
+        "red_card": ("Tarjeta roja", "Roja para {player_name} ({team_name}) al minuto {minute}."),
+        "penalty_missed": ("Penal fallado", "{player_name} ({team_name}) falló un penal al minuto {minute}."),
+        "substitution": ("Cambio", "Cambio en {team_name} al minuto {minute}."),
+    }
+
     def __init__(
         self,
         email_sender: EmailSender,
@@ -440,6 +452,67 @@ class Notifications:
             content=f"La votación de {period_label} está abierta. Entra y vota por tu favorito.",
             category="votation_opened",
             action_url_path="dashboard/votaciones",
+        )
+
+    def match_started(
+        self,
+        *,
+        user_emails: list[str],
+        tournament_name: str,
+        home_team_name: str,
+        away_team_name: str,
+    ) -> str:
+        return self._send_bulk_in_app_notification(
+            user_emails=user_emails,
+            title="¡Comenzó el partido!",
+            content=f"{home_team_name} vs {away_team_name} — {tournament_name}",
+            category="match_started",
+            action_url_path="dashboard/tournament",
+        )
+
+    def match_event_created(
+        self,
+        *,
+        user_emails: list[str],
+        tournament_name: str,
+        event_type: str,
+        team_name: str,
+        player_name: str | None,
+        minute: int,
+    ) -> str:
+        title, body_template = self._MATCH_EVENT_TEMPLATES.get(
+            event_type,
+            ("Evento del partido", "{team_name} — minuto {minute}."),
+        )
+        body = body_template.format(
+            player_name=player_name or "Jugador",
+            team_name=team_name,
+            minute=minute,
+        )
+        return self._send_bulk_in_app_notification(
+            user_emails=user_emails,
+            title=title,
+            content=f"{body} — {tournament_name}",
+            category="match_event",
+            action_url_path="dashboard/tournament",
+        )
+
+    def match_finished(
+        self,
+        *,
+        user_emails: list[str],
+        tournament_name: str,
+        home_team_name: str,
+        away_team_name: str,
+        score_home: int,
+        score_away: int,
+    ) -> str:
+        return self._send_bulk_in_app_notification(
+            user_emails=user_emails,
+            title="Final del partido",
+            content=f"{home_team_name} {score_home} - {score_away} {away_team_name} — {tournament_name}",
+            category="match_finished",
+            action_url_path="dashboard/tournament",
         )
 
     def _get_formatted_notification_field(self, field):

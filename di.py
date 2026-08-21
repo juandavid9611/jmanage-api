@@ -37,6 +37,7 @@ from services.tournament_team_service import TournamentTeamService
 from services.tournament_player_service import TournamentPlayerService
 from services.tournament_match_service import TournamentMatchService
 from services.tournament_match_event_service import TournamentMatchEventService
+from services.tournament_match_notification_service import TournamentMatchNotificationService
 from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
 from repositories.votation_repo_ddb import VotationRepo
@@ -182,6 +183,13 @@ def get_tournament_player_service() -> TournamentPlayerService:
     from repositories.s3_adapter import S3Adapter
     return TournamentPlayerService(repo, match_repo, event_repo, s3=S3Adapter(), team_repo=TournamentTeamRepo())
 
+def get_tournament_match_notification_service() -> TournamentMatchNotificationService:
+    return TournamentMatchNotificationService(
+        team_repo=TournamentTeamRepo(),
+        invitation_repo=TournamentInvitationRepo(),
+        notifications=get_notification_orchestator(),
+    )
+
 def get_match_service() -> TournamentMatchService:
     repo = TournamentMatchRepo()
     event_repo = TournamentMatchEventRepo()
@@ -192,6 +200,7 @@ def get_match_service() -> TournamentMatchService:
         event_repo,
         team_repo=team_repo,
         tournament_repo=tournament_repo,
+        match_notifications=get_tournament_match_notification_service(),
     )
 
 def get_match_event_service() -> TournamentMatchEventService:
@@ -206,6 +215,7 @@ def get_match_event_service() -> TournamentMatchEventService:
         team_repo=team_repo,
         player_repo=player_repo,
         tournament_repo=tournament_repo,
+        match_notifications=get_tournament_match_notification_service(),
     )
 
 def get_standings_service() -> StandingsService:
