@@ -104,6 +104,16 @@ class TestTournamentMatchServiceNotifications(unittest.TestCase):
         self.match_notifications.match_started.assert_not_called()
         self.match_notifications.match_finished.assert_not_called()
 
+    def test_notification_failure_does_not_prevent_match_update(self):
+        self.repo.get.return_value = self.base_match
+        updated = {**self.base_match, "status": "live"}
+        self.repo.update.return_value = updated
+        self.tournament_repo.get.side_effect = Exception("ddb throttled")
+
+        result = self.service.update_match("mtc_1", PatchMatch(status="live"))
+
+        self.assertEqual(result, updated)  # update succeeded despite notification failure
+
 
 if __name__ == "__main__":
     unittest.main()

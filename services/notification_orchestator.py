@@ -467,7 +467,7 @@ class Notifications:
             title="¡Comenzó el partido!",
             content=f"{home_team_name} vs {away_team_name} — {tournament_name}",
             category="match_started",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def match_event_created(
@@ -494,7 +494,7 @@ class Notifications:
             title=title,
             content=f"{body} — {tournament_name}",
             category="match_event",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def match_finished(
@@ -512,7 +512,7 @@ class Notifications:
             title="Final del partido",
             content=f"{home_team_name} {score_home} - {score_away} {away_team_name} — {tournament_name}",
             category="match_finished",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def _get_formatted_notification_field(self, field):

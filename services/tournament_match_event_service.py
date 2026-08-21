@@ -6,6 +6,7 @@ items via the aggregator. The parent match score is also auto-synced
 for goal-type events so the score stays correct.
 """
 
+import logging
 from uuid import uuid4
 from datetime import datetime
 from typing import Any
@@ -25,6 +26,8 @@ from services.tournament_aggregator import (
     update_average_goals_per_match,
 )
 from services.tournament_match_notification_service import TournamentMatchNotificationService
+
+logger = logging.getLogger(__name__)
 
 _GOAL_TYPES = {"goal", "own_goal", "penalty_scored"}
 
@@ -176,23 +179,26 @@ class TournamentMatchEventService:
             )
 
     def _notify_match_event(self, event: dict[str, Any]) -> None:
-        if not (self.match_notifications and self.match_repo and self.tournament_repo and self.team_repo):
-            return
-        match = self.match_repo.get(event.get("match_id"))
-        if not match:
-            return
-        tournament = self.tournament_repo.get(match.get("tournament_id")) or {}
-        team = self.team_repo.get(event.get("team_id")) or {}
-        player_name = None
-        if self.player_repo and event.get("player_id"):
-            player = self.player_repo.get(event["player_id"]) or {}
-            player_name = player.get("name")
-        self.match_notifications.match_event_created(
-            tournament=tournament,
-            event=event,
-            team_name=team.get("name", ""),
-            player_name=player_name,
-        )
+        try:
+            if not (self.match_notifications and self.match_repo and self.tournament_repo and self.team_repo):
+                return
+            match = self.match_repo.get(event.get("match_id"))
+            if not match:
+                return
+            tournament = self.tournament_repo.get(match.get("tournament_id")) or {}
+            team = self.team_repo.get(event.get("team_id")) or {}
+            player_name = None
+            if self.player_repo and event.get("player_id"):
+                player = self.player_repo.get(event["player_id"]) or {}
+                player_name = player.get("name")
+            self.match_notifications.match_event_created(
+                tournament=tournament,
+                event=event,
+                team_name=team.get("name", ""),
+                player_name=player_name,
+            )
+        except Exception:
+            logger.exception("Failed to send match-event notification for event %s", event.get("id"))
 
     # ── Helpers ──────────────────────────────────────────────────────
 

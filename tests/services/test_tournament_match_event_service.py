@@ -69,6 +69,19 @@ class TestTournamentMatchEventServiceNotifications(unittest.TestCase):
 
         service.create_event("mtc_1", body)  # must not raise
 
+    def test_notification_failure_does_not_prevent_event_creation(self):
+        # tournament_repo.get is called twice for a goal event: once inside
+        # the (unrelated, unguarded) aggregator stats update in _apply_event,
+        # and once inside the guarded _notify_match_event lookup. Only the
+        # second call — the notification path — should raise here.
+        tournament = {"id": "trn_1", "name": "Liga 2026"}
+        self.tournament_repo.get.side_effect = [tournament, Exception("ddb throttled")]
+        body = CreateMatchEvent(type="goal", minute=34, player_id="ply_1", team_id="tm_home")
+
+        item = self.service.create_event("mtc_1", body)
+
+        self.assertEqual(item["type"], "goal")  # event created despite notification failure
+
 
 if __name__ == "__main__":
     unittest.main()

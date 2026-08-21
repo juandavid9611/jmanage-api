@@ -28,7 +28,7 @@ class TestNotificationsMatchMethods(unittest.TestCase):
             title="¡Comenzó el partido!",
             content="Halcones vs Tigres — Liga 2026",
             category="match_started",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def test_match_event_created_maps_goal_copy(self):
@@ -46,7 +46,7 @@ class TestNotificationsMatchMethods(unittest.TestCase):
             title="¡Gol!",
             content="Gol de Juan Perez (Halcones) al minuto 34. — Liga 2026",
             category="match_event",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def test_match_event_created_maps_red_card_copy(self):
@@ -64,7 +64,7 @@ class TestNotificationsMatchMethods(unittest.TestCase):
             title="Tarjeta roja",
             content="Roja para Mario Ruiz (Tigres) al minuto 70. — Liga 2026",
             category="match_event",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def test_match_event_created_maps_substitution_copy_without_player_name(self):
@@ -82,7 +82,7 @@ class TestNotificationsMatchMethods(unittest.TestCase):
             title="Cambio",
             content="Cambio en Halcones al minuto 60. — Liga 2026",
             category="match_event",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def test_match_event_created_unknown_type_falls_back(self):
@@ -100,7 +100,7 @@ class TestNotificationsMatchMethods(unittest.TestCase):
             title="Evento del partido",
             content="Halcones — minuto 10. — Liga 2026",
             category="match_event",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
     def test_match_finished_sends_bulk_in_app_notification(self):
@@ -118,7 +118,7 @@ class TestNotificationsMatchMethods(unittest.TestCase):
             title="Final del partido",
             content="Halcones 2 - 1 Tigres — Liga 2026",
             category="match_finished",
-            action_url_path="dashboard/tournaments",
+            action_url_path="dashboard/tournament",
         )
 
 
