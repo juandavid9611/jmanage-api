@@ -351,6 +351,9 @@ class UserService:
         return results
 
     def get_top_goals_and_assists(self, account_id: str, workspace_id: str) -> list[dict[str, Any]]:
+        # booker.avatarUrl is always None (never populated at booker-creation time in
+        # calendar_service.py), so look up each booker's live avatarUrl from their user record.
+        users_by_id = {u["id"]: u for u in self.list_users(account_id, group=workspace_id, include_disabled=False)}
         items = self.tour_svc.list_tours(account_id, group=workspace_id, tour_type=None)
         top_goals_and_assists = {}
         for item in items:
@@ -362,7 +365,7 @@ class UserService:
                         top_goals_and_assists[booker_id] = {
                             "id": booker_id,
                             "name": booker["name"],
-                            "avatarUrl": booker.get("avatarUrl"),
+                            "avatarUrl": users_by_id.get(booker_id, {}).get("avatarUrl") or booker.get("avatarUrl"),
                             "goals": 0,
                             "assists": 0,
                         }
