@@ -37,11 +37,17 @@ class WorkspaceRepo:
     def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
         """List all workspaces for the specified account"""
         try:
-            resp = self._table.query(
-                IndexName=self._account_gsi,
-                KeyConditionExpression=Key("account_id").eq(account_id)
-            )
-            return resp.get("Items", [])
+            kwargs: dict[str, Any] = {
+                "IndexName": self._account_gsi,
+                "KeyConditionExpression": Key("account_id").eq(account_id),
+            }
+            items: list[dict[str, Any]] = []
+            while True:
+                resp = self._table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                if not resp.get("LastEvaluatedKey"):
+                    return items
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
         except Exception:
             # Fallback to scan with filter
             return _scan_all(

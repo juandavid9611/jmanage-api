@@ -1,11 +1,19 @@
-from pydantic import BaseModel
+from typing import Optional
+
+from pydantic import BaseModel, StringConstraints
+from typing_extensions import Annotated
+
+from core.casing import camel_alias
+
+WorkspaceName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 
 
 class CreateWorkspace(BaseModel):
-    """Schema for creating a new workspace (id is auto-generated)"""
-    name: str
-    logo: str | None = None
-    plan: str | None = None
+    """Schema for creating a new workspace (id is auto-generated). camelCase on the wire."""
+    model_config = {"alias_generator": camel_alias, "populate_by_name": True}
+
+    name: WorkspaceName
+    logo: Optional[str] = None
 
 
 class PutWorkspace(BaseModel):
