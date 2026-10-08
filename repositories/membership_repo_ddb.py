@@ -28,8 +28,12 @@ class MembershipRepo:
             return parts[3]
         return None
 
-    def list_by_account(self, account_id: str) -> List[Dict[str, Any]]:
-        """List all memberships for an account using GSI"""
+    def list_by_account(self, account_id: str, include_workspaceless: bool = False) -> List[Dict[str, Any]]:
+        """List all memberships for an account using GSI.
+
+        Legacy account-level rows (SK without a workspace) are skipped unless
+        include_workspaceless=True, in which case they come back with
+        workspace_id=None so callers can surface users that have no category."""
         try:
             resp = self._table.query(
                 IndexName="byAccount",
@@ -48,7 +52,7 @@ class MembershipRepo:
             memberships = []
             for it in items:
                 workspace_id = self._parse_workspace_id(it.get("SK", ""))
-                if not workspace_id:
+                if not workspace_id and not include_workspaceless:
                     print(f"WARNING: Membership has no workspace in SK: {it.get('PK')}/{it.get('SK')}")
                     continue
                 memberships.append({

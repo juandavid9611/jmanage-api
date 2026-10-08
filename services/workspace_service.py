@@ -1,9 +1,37 @@
+import logging
 import re
 from uuid import uuid4
 from services.membership_service import MembershipService
 from api.schemas.workspaces import PutWorkspace
 from typing import Any
 from repositories.workspace_repo_ddb import WorkspaceRepo
+
+logger = logging.getLogger(__name__)
+
+CREATOR_ROLE = "admin"
+
+
+class WorkspaceNameConflict(Exception):
+    """A workspace with the same (case-insensitive, trimmed) name already exists in the account."""
+
+
+class WorkspaceCreationError(Exception):
+    """Workspace creation failed and was rolled back."""
+
+
+def normalize_workspace_name(name: str | None) -> str:
+    """Trim and collapse nothing else; raises ValueError when empty or longer than 80 chars."""
+    cleaned = (name or "").strip()
+    if not cleaned:
+        raise ValueError("Workspace name is required")
+    if len(cleaned) > 80:
+        raise ValueError("Workspace name must be at most 80 characters")
+    return cleaned
+
+
+def name_key(name: str | None) -> str:
+    """Comparison key for duplicate detection (trimmed, case-insensitive)."""
+    return (name or "").strip().casefold()
 
 
 class WorkspaceService:
@@ -47,6 +75,39 @@ class WorkspaceService:
         new_workspace = self._get_new_workspace(item, account_id)
         self.repo.put(new_workspace)
         return new_workspace
+
+    def create_with_admin(self, name: str, logo: str | None, account_id: str, creator_user_id: str) -> dict[str, Any]:
+        """Create a workspace and an active admin membership for the creator.
+
+        Returns the workspace in the same shape as GET /workspaces (item + per-user `role`).
+        Raises ValueError (invalid name), WorkspaceNameConflict (duplicate name in the account)
+        or WorkspaceCreationError (membership write failed; the workspace is deleted again).
+        """
+        clean_name = normalize_workspace_name(name)
+        key = name_key(clean_name)
+        if any(name_key(w.get("name")) == key for w in self.repo.list_all(account_id)):
+            raise WorkspaceNameConflict(f"A workspace named '{clean_name}' already exists")
+
+        workspace = {
+            "id": uuid4().hex,
+            "account_id": account_id,
+            "name": clean_name,
+            "logo": logo,
+            "plan": None,
+        }
+        self.repo.put(workspace)
+        try:
+            self.membership_svc.create_membership(
+                creator_user_id, account_id, workspace["id"], role=CREATOR_ROLE, status="active"
+            )
+        except Exception as exc:
+            logger.exception("Membership creation failed for workspace %s; rolling back", workspace["id"])
+            try:
+                self.repo.delete(workspace["id"], account_id)
+            except Exception:
+                logger.exception("Rollback failed: orphan workspace %s in account %s", workspace["id"], account_id)
+            raise WorkspaceCreationError("Could not create workspace") from exc
+        return {**workspace, "role": CREATOR_ROLE}
 
     def update(self, workspace_id: str, account_id: str, item: PutWorkspace) -> dict[str, Any] | None:
         existing = self.repo.get(workspace_id, account_id)

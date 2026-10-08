@@ -42,23 +42,42 @@ class UserService:
         return None
 
     def list_users(self, account_id: str, *, group: str | None = None, include_disabled: bool = False) -> list[dict[str, Any]]:
-        # Get all memberships for the account
-        memberships = self.membership_svc.list_account_memberships(account_id)
-        
-        # Filter by workspace (group) if requested
-        if group:
-            memberships = [m for m in memberships if m.get("workspace_id") == group]
-            
-        # Get users
+        # Include legacy workspace-less rows so users with no category still show up.
+        all_memberships = self.membership_svc.list_account_memberships(account_id, include_workspaceless=True)
+
+        # Every user carries ALL of their active memberships in the account,
+        # regardless of the workspace filter.
+        memberships_by_user: dict[str, list[dict[str, Any]]] = {}
+        for m in all_memberships:
+            if m.get("user_id") and m.get("workspace_id") and m.get("status", "active") == "active":
+                memberships_by_user.setdefault(m["user_id"], []).append(
+                    {"workspace_id": m.get("workspace_id"), "role": m.get("role")}
+                )
+        for ms in memberships_by_user.values():
+            ms.sort(key=lambda x: x["workspace_id"] or "")
+
+        # One row per user. With a workspace filter, group/role come from that
+        # workspace's membership; without it, from the user's first membership.
+        rows: dict[str, dict[str, Any]] = {}
+        # Real workspaces first, so a user's row comes from a category when they have one.
+        for m in sorted(all_memberships, key=lambda x: (x.get("workspace_id") is None, x.get("workspace_id") or "")):
+            uid = m.get("user_id")
+            if not uid or uid in rows:
+                continue
+            if group and m.get("workspace_id") != group:
+                continue
+            rows[uid] = m
+
+        users_by_id = {u["id"]: u for u in self.repo.batch_get(rows.keys())}
         items = []
-        for m in memberships:
-            user = self.repo.get(m["user_id"], account_id)
+        for uid, m in rows.items():
+            user = users_by_id.get(uid)
             if user:
-                # Attach workspace info
-                user["user_group"] = m.get("workspace_id") # Temporary for mapping
+                user["user_group"] = m.get("workspace_id")  # Temporary for mapping
                 user["role"] = m.get("role")
+                user["memberships"] = memberships_by_user.get(uid, [])
                 items.append(user)
-                
+
         if not include_disabled:
             items = [item for item in items if item.get("user_status") == UserStatus.ACTIVE]
 
