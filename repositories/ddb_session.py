@@ -79,3 +79,19 @@ def tournament_invitation_table():
 
 def donation_table():
     return dynamodb.Table(os.getenv("DONATION_TABLE_NAME"))
+
+
+def training_session_table():
+    return dynamodb.Table(os.getenv("TRAINING_SESSION_TABLE_NAME"))
+
+
+def club_tournament_table():
+    return dynamodb.Table(os.getenv("CLUB_TOURNAMENT_TABLE_NAME"))
+
+
+def club_roster_table():
+    return dynamodb.Table(os.getenv("CLUB_ROSTER_TABLE_NAME"))
+
+
+def club_match_table():
+    return dynamodb.Table(os.getenv("CLUB_MATCH_TABLE_NAME"))

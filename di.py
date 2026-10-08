@@ -46,6 +46,12 @@ from services.tournament_invitation_service import TournamentInvitationService
 from repositories.tournament_invitation_repo_ddb import TournamentInvitationRepo
 from repositories.donation_repo_ddb import DonationRepo
 from services.donation_service import DonationService
+from repositories.training_session_repo_ddb import TrainingSessionRepo
+from services.training_session_service import TrainingSessionService
+from repositories.club_tournament_repo_ddb import ClubTournamentRepo
+from repositories.club_roster_repo_ddb import ClubRosterRepo
+from repositories.club_match_repo_ddb import ClubMatchRepo
+from services.club_tournament_service import ClubTournamentService
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -99,7 +105,15 @@ def get_calendar_service() -> CalendarService:
     s3 = S3Adapter()
     tour_svc = get_tour_service()
     user_svc = get_user_service()
-    return CalendarService(repo, s3, get_notification_orchestator(), tour_svc=tour_svc, user_svc=user_svc)
+    return CalendarService(
+        repo,
+        s3,
+        get_notification_orchestator(),
+        tour_svc=tour_svc,
+        user_svc=user_svc,
+        club_match_repo=ClubMatchRepo() if os.environ.get("CLUB_MATCH_TABLE_NAME") else None,
+        account_svc=get_account_service(),
+    )
 
 def get_tour_service() -> TourService:
     repo = TourRepo()
@@ -239,3 +253,16 @@ def get_tournament_stats_service() -> TournamentStatsService:
 
 def get_donation_service() -> DonationService:
     return DonationService(DonationRepo())
+
+
+def get_training_session_service() -> TrainingSessionService:
+    return TrainingSessionService(TrainingSessionRepo())
+
+
+def get_club_tournament_service() -> ClubTournamentService:
+    return ClubTournamentService(
+        ClubTournamentRepo(),
+        ClubRosterRepo(),
+        ClubMatchRepo(),
+        calendar_repo=CalendarRepo(),
+    )

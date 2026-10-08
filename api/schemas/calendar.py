@@ -15,6 +15,8 @@ class PutCalendarEvent(BaseModel):
     createTour: bool | None = True
     group: str
     tourId: str | None = None
+    # Club match linked to this event. On update, "" unlinks (None means "leave as is").
+    clubMatchId: str | None = None
 
 class ParticipationRequest(BaseModel):
     value: bool
