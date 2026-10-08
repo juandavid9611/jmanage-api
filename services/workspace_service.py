@@ -19,6 +19,28 @@ class WorkspaceCreationError(Exception):
     """Workspace creation failed and was rolled back."""
 
 
+class WorkspaceNotFound(Exception):
+    """The workspace does not exist in the account (or is already gone)."""
+
+
+class WorkspaceDeleteBlocked(Exception):
+    """The workspace is not safe to remove. `code` is machine-readable (see DELETE_BLOCK_*)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class WorkspaceDeleteError(Exception):
+    """Removing the workspace failed after its checks passed; safe to retry."""
+
+
+DELETE_BLOCK_DEFAULT = "default_workspace"
+DELETE_BLOCK_MEMBERS = "has_members"
+DELETE_BLOCK_EVENTS = "has_events"
+
+
 def normalize_workspace_name(name: str | None) -> str:
     """Trim and collapse nothing else; raises ValueError when empty or longer than 80 chars."""
     cleaned = (name or "").strip()
@@ -35,9 +57,14 @@ def name_key(name: str | None) -> str:
 
 
 class WorkspaceService:
-    def __init__(self, repo: WorkspaceRepo, membership_svc: MembershipService):
+    def __init__(self, repo: WorkspaceRepo, membership_svc: MembershipService, *,
+                 account_svc=None, calendar_repo=None, tour_repo=None):
         self.repo = repo
         self.membership_svc = membership_svc
+        # Only needed by delete_safely / check_deletable
+        self.account_svc = account_svc
+        self.calendar_repo = calendar_repo
+        self.tour_repo = tour_repo
         self._excluded_fields = ["id"]  # Prevent id from being updated
 
     def get(self, workspace_id: str, account_id: str) -> dict[str, Any] | None:
@@ -121,6 +148,45 @@ class WorkspaceService:
         if not new_item:
             raise ValueError(f"Workspace {workspace_id} not found after update.")
         return new_item
+
+    def check_deletable(self, workspace_id: str, account_id: str, caller_user_id: str | None = None) -> None:
+        """Raise WorkspaceNotFound / WorkspaceDeleteBlocked unless the workspace is safe to remove.
+
+        The caller's own membership does not count as a member (it is removed with the workspace).
+        With caller_user_id=None (operator script) every membership counts.
+        """
+        if not self.repo.get(workspace_id, account_id):
+            raise WorkspaceNotFound(f"Workspace {workspace_id} not found")
+        account = (self.account_svc.get(account_id) if self.account_svc else None) or {}
+        if (account.get("settings") or {}).get("default_workspace") == workspace_id:
+            raise WorkspaceDeleteBlocked(DELETE_BLOCK_DEFAULT, "This is the account's default category")
+        others = [m for m in self.membership_svc.list_workspace_memberships(workspace_id)
+                  if m.get("user_id") != caller_user_id]
+        if others:
+            raise WorkspaceDeleteBlocked(
+                DELETE_BLOCK_MEMBERS, f"The category still has {len(others)} member(s)")
+        # Events/tours store the workspace id in their `user_group` attribute
+        if list(self.calendar_repo.list_by_group(workspace_id, account_id)) or \
+                list(self.tour_repo.list_filtered(account_id, group=workspace_id)):
+            raise WorkspaceDeleteBlocked(DELETE_BLOCK_EVENTS, "Calendar events or tours still reference the category")
+
+    def delete_safely(self, workspace_id: str, account_id: str, caller_user_id: str | None) -> None:
+        """Delete a workspace after the safety checks; membership first, then the workspace.
+
+        If the workspace delete fails the caller's membership stays deleted (nothing is re-created);
+        a retry passes the checks again and succeeds.
+        """
+        self.check_deletable(workspace_id, account_id, caller_user_id)
+        if caller_user_id:
+            self.membership_svc.delete_membership(caller_user_id, account_id, workspace_id)
+        try:
+            self.repo.delete(workspace_id, account_id)
+        except ValueError as exc:  # repo raises ValueError when the item is already gone
+            raise WorkspaceNotFound(f"Workspace {workspace_id} not found") from exc
+        except Exception as exc:
+            logger.exception("Workspace delete failed for %s in account %s after membership removal",
+                             workspace_id, account_id)
+            raise WorkspaceDeleteError("Could not delete workspace") from exc
 
     def delete(self, tour_id: str, account_id: str) -> None:
         self.repo.delete(tour_id, account_id)

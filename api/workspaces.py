@@ -1,9 +1,9 @@
 from api.schemas.workspaces import PutWorkspace, CreateWorkspace
 from di import get_workspace_service
 from auth import ClubAccountChecker, PermissionChecker, get_current_user, get_account_id, get_account_role
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from services.workspace_service import WorkspaceCreationError, WorkspaceNameConflict, WorkspaceService
+from services.workspace_service import WorkspaceCreationError, WorkspaceDeleteBlocked, WorkspaceDeleteError, WorkspaceNotFound, WorkspaceNameConflict, WorkspaceService
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -72,11 +72,28 @@ async def update_workspace(
     svc.update(workspace_id, account_id, put_workspace)
     return {"updated_workspace_id": workspace_id}
 
-@router.delete("/{workspace_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+@router.delete(
+    "/{workspace_id}",
+    status_code=204,
+    dependencies=[Depends(PermissionChecker(required_permissions=['admin'])), Depends(ClubAccountChecker())],
+)
 async def delete_workspace(
-    workspace_id: str, 
+    workspace_id: str,
+    user: dict = Depends(get_current_user),
     account_id: str = Depends(get_account_id),
     svc: WorkspaceService = Depends(get_workspace_service)
 ):
-    svc.delete(workspace_id, account_id)
-    return {"deleted_workspace_id": workspace_id}
+    """Delete a category of the current club account.
+
+    404 unknown (or other account's) workspace; 409 with detail {code, message} where code is
+    default_workspace | has_members | has_events; 500 if the delete itself fails (retry is safe).
+    """
+    try:
+        svc.delete_safely(workspace_id, account_id, user["sub"])
+    except WorkspaceNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except WorkspaceDeleteBlocked as e:
+        raise HTTPException(status_code=409, detail={"code": e.code, "message": e.message})
+    except WorkspaceDeleteError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return Response(status_code=204)
