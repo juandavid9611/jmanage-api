@@ -38,7 +38,7 @@ def build_stock_decrement(product_table_name: str, product_id: str, account_id: 
             "TableName": product_table_name,
             "Key": {"pk": f"PRODUCT#{product_id}", "sk": "PRODUCT"},
             "UpdateExpression": "ADD available :negq, total_sold :q, gsi2_sk :negq, neg_total_sold :negq",
-            "ConditionExpression": "attribute_exists(pk) AND account_id = :acc AND publish = :pub AND available >= :q",
+            "ConditionExpression": "attribute_exists(pk) AND account_id = :acc AND (attribute_not_exists(publish) OR publish = :pub) AND available >= :q",
             "ExpressionAttributeValues": {
                 ":q": int(qty),
                 ":negq": -int(qty),
