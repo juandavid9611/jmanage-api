@@ -6,13 +6,22 @@ from services.user_service import UserService
 from services.tour_service import TourService
 from api.schemas.calendar import ParticipationRequest, PutCalendarEvent
 from repositories.calendar_repo_ddb import CalendarRepo
+from repositories.club_match_repo_ddb import ClubMatchRepo
+from services.account_service import AccountService
+from services.club_dates import event_start_to_local_date
 from services.notification_orchestator import Notifications
 from builders.tour_builder import build_tour_from_calendar_event
 
 
+class ClubMatchLinkError(ValueError):
+    """The clubMatchId on an event does not point at a match in the event's workspace."""
+
+
 class CalendarService:
-    def __init__(self, repo: CalendarRepo, s3: S3Adapter, notifier: Notifications, tour_svc: TourService, user_svc: UserService):
+    def __init__(self, repo: CalendarRepo, s3: S3Adapter, notifier: Notifications, tour_svc: TourService, user_svc: UserService, club_match_repo: ClubMatchRepo | None = None, account_svc: AccountService | None = None):
         self.repo = repo
+        self.club_match_repo = club_match_repo
+        self.account_svc = account_svc
         self.notifier = notifier
         self.s3 = s3
         self.tour_svc = tour_svc
@@ -37,8 +46,12 @@ class CalendarService:
     def create(self, calendar_item: PutCalendarEvent, account_id: str) -> dict[str, Any]:
         put_tour = build_tour_from_calendar_event(calendar_item)
         calendar_item.tourId = put_tour.id
+        club_match = self._get_linkable_match(calendar_item.clubMatchId, calendar_item.group, account_id)
         new_calendar_event = self._get_new_calendar_event(calendar_item, account_id)
         self.repo.put(new_calendar_event)
+        if club_match:
+            self._link_match(club_match, new_calendar_event["id"], account_id)
+            self._sync_match_from_event(club_match, calendar_item, account_id)
 
         users = self.user_svc.list_users(account_id, group=calendar_item.group, include_disabled=False)
         user_emails = [user["email"] for user in users]
@@ -54,6 +67,9 @@ class CalendarService:
         if not existing:
             return None
         updates = self._get_needed_updates(item)
+        # clubMatchId: "" unlinks, an id links, None leaves the link as is.
+        if item.clubMatchId is not None:
+            self._sync_club_link(existing, calendar_event_id, item, account_id, updates)
         if not updates:
             return self._map_calendar_event(existing)
         self.repo.update(calendar_event_id, account_id, updates)
@@ -66,9 +82,20 @@ class CalendarService:
             attrs = self._tour_attrs_from_event(item)
             self.tour_svc.update_attributes(tour_id, account_id, **attrs)
 
+        linked_match_id = new_item.get("club_match_id")
+        if linked_match_id:
+            match = self._get_match(linked_match_id, account_id)
+            if match:
+                self._sync_match_from_event(match, item, account_id)
+
         return self._map_calendar_event(new_item)
     
     def delete(self, calendar_event_id: str, account_id: str) -> None:
+        existing = self.repo.get(calendar_event_id, account_id)
+        match_id = existing.get("club_match_id") if existing else None
+        match = self._get_match(match_id, account_id) if match_id else None
+        if match and match.get("calendar_event_id") == calendar_event_id:
+            self.club_match_repo.update(match["id"], account_id, {"calendar_event_id": None})
         self.repo.delete(calendar_event_id, account_id)
 
 
@@ -131,6 +158,7 @@ class CalendarService:
         item["tourId"] = item.pop("tour_id", None)
         item["location"] = item.pop("event_location", None)
         item["createTour"] = item.pop("create_tour", None)
+        item["clubMatchId"] = item.pop("club_match_id", None)
         return item
 
     def _get_new_calendar_event(self, item: PutCalendarEvent, account_id: str) -> dict[str, Any]:
@@ -149,16 +177,77 @@ class CalendarService:
             "user_group": item.group,
             "create_tour": True,
             "tour_id": item.tourId,
+            "club_match_id": item.clubMatchId or None,
         }
 
     def _get_needed_updates(self, item: PutCalendarEvent) -> dict[str, Any]:
         data = item.dict(exclude_unset=True, exclude_none=True)
         updates: dict[str, Any] = {}
         for field, value in data.items():
-            if field in self._excluded_fields:
-                continue
+            if field in self._excluded_fields or field == "clubMatchId":
+                continue  # the club link is handled by _sync_club_link
             updates[self._map_attribute_key(field)] = value
         return updates
+
+    # ── Club match link ──────────────────────────────────────────────
+
+    def _get_match(self, match_id: str, account_id: str) -> dict[str, Any] | None:
+        if not self.club_match_repo:
+            return None
+        return self.club_match_repo.get(match_id, account_id)
+
+    def _get_linkable_match(self, match_id: str | None, group: str, account_id: str) -> dict[str, Any] | None:
+        """The match to link, validated to exist in this account and workspace. None when no link is requested."""
+        if not match_id:
+            return None
+        match = self._get_match(match_id, account_id)
+        if not match or match.get("workspace_id") != group:
+            raise ClubMatchLinkError(f"Club match {match_id} not found in this workspace")
+        return match
+
+    def _account_timezone(self, account_id: str) -> str | None:
+        account = self.account_svc.get(account_id) if self.account_svc else None
+        return ((account or {}).get("settings") or {}).get("timezone")
+
+    def _sync_match_from_event(self, match: dict[str, Any], event: PutCalendarEvent, account_id: str) -> None:
+        """Copy the event's date (account timezone) and title (as rival) onto the linked match."""
+        self.club_match_repo.update(
+            match["id"],
+            account_id,
+            {
+                "date": event_start_to_local_date(event.start, self._account_timezone(account_id)),
+                "rival": event.title,
+            },
+        )
+
+    def _link_match(self, match: dict[str, Any], event_id: str, account_id: str) -> None:
+        if match.get("calendar_event_id") and match["calendar_event_id"] != event_id:
+            self._clear_event_link(match["calendar_event_id"], match["id"], account_id)
+        self.club_match_repo.update(match["id"], account_id, {"calendar_event_id": event_id})
+
+    def _clear_event_link(self, event_id: str, match_id: str, account_id: str) -> None:
+        """Unlink a (previous) event that still points at this match."""
+        other = self.repo.get(event_id, account_id)
+        if other and other.get("club_match_id") == match_id:
+            self.repo.update(event_id, account_id, {"club_match_id": None})
+
+    def _sync_club_link(
+        self, existing: dict[str, Any], event_id: str, item: PutCalendarEvent, account_id: str, updates: dict[str, Any]
+    ) -> None:
+        """Apply an explicit clubMatchId on update ("" = unlink), adding the event-side change to `updates`."""
+        old_match_id = existing.get("club_match_id")
+        new_match_id = item.clubMatchId or None
+        if new_match_id == old_match_id:
+            return
+        # Validate the new match first so a bad id can't leave the old link half-cleared.
+        new_match = self._get_linkable_match(new_match_id, existing.get("user_group") or item.group, account_id)
+        if old_match_id:
+            old_match = self._get_match(old_match_id, account_id)
+            if old_match and old_match.get("calendar_event_id") == event_id:
+                self.club_match_repo.update(old_match_id, account_id, {"calendar_event_id": None})
+        updates["club_match_id"] = new_match_id
+        if new_match:
+            self._link_match(new_match, event_id, account_id)  # date/rival sync happens after the update
     
     def _map_attribute_key(self, key: str) -> str:
         if key in self._custom_mapping_keys:

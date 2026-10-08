@@ -27,7 +27,9 @@ async def get_current_user(
     except KeyError:
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Username missing")
 
-from di import get_membership_service
+from di import get_account_service, get_membership_service
+from core.account_type import is_club
+from services.account_service import AccountService
 from services.membership_service import MembershipService
 
 async def get_user_accounts(
@@ -262,4 +264,21 @@ class WorkspacePermissionChecker:
                 detail=f'Workspace {self.required_permissions[0]} permission required.'
             )
 
+        return True
+
+
+class ClubAccountChecker:
+    """Allow the request only when the current account is a club (not a tournament account)."""
+
+    def __call__(
+        self,
+        account_id: str = Depends(get_account_id),
+        account_svc: AccountService = Depends(get_account_service),
+    ) -> bool:
+        account = account_svc.get(account_id)
+        if not account or not is_club(account):
+            raise HTTPException(
+                status_code=HTTP_403_FORBIDDEN,
+                detail='This feature is only available for club accounts.'
+            )
         return True

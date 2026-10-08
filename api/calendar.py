@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from api.schemas.calendar import ParticipationRequest, PutCalendarEvent
 from auth import PermissionChecker, WorkspacePermissionChecker, get_current_user, get_account_id
 from di import get_calendar_service
-from services.calendar_service import CalendarService
+from services.calendar_service import CalendarService, ClubMatchLinkError
 from services.tour_service import TourService
 
 
@@ -38,7 +38,10 @@ async def create_calendar_event(
             detail="Event group must match workspace_id"
         )
     
-    calendar_item = calendar_svc.create(put_calendar_event, account_id)
+    try:
+        calendar_item = calendar_svc.create(put_calendar_event, account_id)
+    except ClubMatchLinkError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return calendar_item
 
 @router.put(
@@ -64,7 +67,10 @@ async def update_calendar_event(
             detail=f"Event does not belong to workspace {workspace_id}"
         )
     
-    svc.update(put_calendar_event.id, account_id, put_calendar_event)
+    try:
+        svc.update(put_calendar_event.id, account_id, put_calendar_event)
+    except ClubMatchLinkError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"updated_event_id": put_calendar_event.id}
 
 @router.delete(
