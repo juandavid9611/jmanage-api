@@ -62,8 +62,9 @@ class FakeMembershipRepo:
                      for u, a, w, r in rows}
         self.log = []
 
-    def list_by_account(self, account_id):
-        return [dict(v) for k, v in self.rows.items() if k[1] == account_id]
+    def list_by_account(self, account_id, include_workspaceless=False):
+        return [dict(v) for k, v in self.rows.items()
+                if k[1] == account_id and (include_workspaceless or v["workspace_id"])]
 
     def create(self, u, a, w, role="user", status="active"):
         self.log.append(("create", u, w))
@@ -178,8 +179,8 @@ class FakeMembershipSvc:
     def __init__(self, ms):
         self.ms = ms
 
-    def list_account_memberships(self, account_id):
-        return self.ms
+    def list_account_memberships(self, account_id, include_workspaceless=False):
+        return [m for m in self.ms if include_workspaceless or m.get("workspace_id")]
 
 
 class FakeUserRepo:
@@ -237,6 +238,42 @@ class TestListUsers(unittest.TestCase):
         users = self.svc.list_users("A", include_disabled=True)
         u3 = next(u for u in users if u["id"] == "u3")
         self.assertEqual(u3["memberships"], [])
+
+
+class TestUnassigned(unittest.TestCase):
+    """Users whose only membership row has no workspace are 'unassigned'."""
+
+    def test_workspaceless_user_listed_with_empty_memberships(self):
+        ms = [
+            {"user_id": "u1", "workspace_id": "w1", "role": "user", "status": "active"},
+            {"user_id": "u9", "workspace_id": None, "role": "user", "status": "active"},
+        ]
+        repo = FakeUserRepo({"u1": mk_user("u1"), "u9": mk_user("u9")})
+        svc = UserService(repo, None, None, FakeCog(), None, FakeMembershipSvc(ms), None)
+        users = {u["id"]: u for u in svc.list_users("A")}
+        self.assertEqual(sorted(users), ["u1", "u9"])
+        self.assertEqual(users["u9"]["memberships"], [])
+        self.assertEqual(users["u1"]["memberships"], [{"workspace_id": "w1", "role": "user"}])
+        # a workspace filter never returns them
+        self.assertEqual([u["id"] for u in svc.list_users("A", group="w1")], ["u1"])
+
+    def test_user_with_real_and_workspaceless_rows_uses_real_one(self):
+        ms = [
+            {"user_id": "u1", "workspace_id": None, "role": "user", "status": "active"},
+            {"user_id": "u1", "workspace_id": "w1", "role": "coach", "status": "active"},
+        ]
+        repo = FakeUserRepo({"u1": mk_user("u1")})
+        svc = UserService(repo, None, None, FakeCog(), None, FakeMembershipSvc(ms), None)
+        (u1,) = svc.list_users("A")
+        self.assertEqual(u1["role"], "coach")
+        self.assertEqual(u1["memberships"], [{"workspace_id": "w1", "role": "coach"}])
+
+    def test_bulk_add_assigns_workspaceless_user(self):
+        repo = FakeMembershipRepo([("u9", "A", None, "user")])
+        svc = BulkMembershipService(repo, FakeWorkspaceSvc({"w1": "A"}))
+        out = svc.apply("A", ["u9"], "w1", "add")
+        self.assertEqual((out["created"], out["failed"]), (1, 0))
+        self.assertIn(("create", "u9", "w1"), repo.log)
 
 
 if __name__ == "__main__":

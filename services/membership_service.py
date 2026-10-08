@@ -16,9 +16,9 @@ class MembershipService:
         """Get all memberships for a user in a specific account"""
         return self.repo.get_user_account_memberships(user_id, account_id)
     
-    def list_account_memberships(self, account_id: str) -> List[Dict[str, Any]]:
-        """List all memberships for an account"""
-        return self.repo.list_by_account(account_id)
+    def list_account_memberships(self, account_id: str, include_workspaceless: bool = False) -> List[Dict[str, Any]]:
+        """List all memberships for an account (optionally including legacy rows with no workspace)"""
+        return self.repo.list_by_account(account_id, include_workspaceless=include_workspaceless)
     
     def list_workspace_memberships(self, workspace_id: str) -> List[Dict[str, Any]]:
         """List all memberships for a workspace"""

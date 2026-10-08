@@ -28,10 +28,14 @@ class BulkMembershipService:
 
         # One account-scoped GSI query: tenancy check + per-user membership map.
         by_user: dict[str, dict[str, dict[str, Any]]] = {}
-        for m in self.repo.list_by_account(account_id):
+        for m in self.repo.list_by_account(account_id, include_workspaceless=True):
             if m.get("account_id") not in (None, account_id):
                 continue
-            by_user.setdefault(m["user_id"], {})[m["workspace_id"]] = m
+            # Users whose only row is a legacy workspace-less one are "unassigned":
+            # they belong to the account but to no category yet.
+            by_user.setdefault(m["user_id"], {})
+            if m.get("workspace_id"):
+                by_user[m["user_id"]][m["workspace_id"]] = m
 
         results = []
         for uid in dict.fromkeys(user_ids):
