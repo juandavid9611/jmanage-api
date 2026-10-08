@@ -1,5 +1,6 @@
 import os
-from .ddb_session import user_table
+from .ddb_session import user_table, dynamodb
+from .ddb_batch import batch_get_items
 from boto3.dynamodb.conditions import Attr
 from typing import Iterable, Any
 
@@ -30,6 +31,19 @@ class UserRepo:
         """
         resp = self._table.get_item(Key={"id": user_id})
         return resp.get("Item")
+
+    def batch_get(self, user_ids: Iterable[str]) -> list[dict[str, Any]]:
+        """Fetch many users by id (BatchGetItem, chunks of 100, unprocessed-key retry).
+
+        Like get(), no account check here: callers must derive ids from account memberships.
+        Missing ids are simply absent from the result; order is not guaranteed.
+        """
+        keys = [{"id": uid} for uid in dict.fromkeys(user_ids)]
+        return batch_get_items(
+            lambda req: dynamodb.batch_get_item(RequestItems=req),
+            self._table.name,
+            keys,
+        )
 
     def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
         """List all users

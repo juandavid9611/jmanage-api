@@ -158,6 +158,11 @@ def get_order_service() -> OrderService:
         s3=S3Adapter(),
     )
 
+def get_bulk_membership_service():
+    from services.bulk_membership_service import BulkMembershipService
+    return BulkMembershipService(MembershipRepo(), get_workspace_service())
+
+
 def get_membership_service() -> MembershipService:
     repo = MembershipRepo()
     return MembershipService(repo)

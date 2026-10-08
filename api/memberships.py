@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from di import get_membership_service
 from services.membership_service import MembershipService
 from auth import get_current_user, PermissionChecker, get_account_id
-from api.schemas.memberships import UpdateMembershipRole
+from api.schemas.memberships import UpdateMembershipRole, BulkMembershipRequest
+from di import get_bulk_membership_service
+from services.bulk_membership_service import BulkMembershipService, WorkspaceNotFound
 
 router = APIRouter(prefix="/memberships", tags=["memberships"])
 
@@ -15,6 +17,22 @@ async def get_my_memberships(
     user_id = user.get("sub")
     return svc.get_user_memberships(user_id)
 
+
+@router.post("/bulk", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def bulk_memberships(
+    body: BulkMembershipRequest,
+    account_id: str = Depends(get_account_id),
+    svc: BulkMembershipService = Depends(get_bulk_membership_service),
+):
+    """Add / move / remove many users to/from a workspace (category) in one call (admin only).
+    Declared before the /{user_id} routes so "bulk" is never captured as a user id."""
+    try:
+        return svc.apply(
+            account_id, body.user_ids, body.workspace_id, body.mode,
+            role=body.role, from_workspace_id=body.from_workspace_id,
+        )
+    except WorkspaceNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 @router.get("/{user_id}", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
 async def list_user_memberships(
