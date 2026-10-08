@@ -1,3 +1,4 @@
+from decimal import Decimal
 from enum import Enum
 from pydantic import BaseModel
 
@@ -20,7 +21,7 @@ class BulkPutPaymentRequest(BaseModel):
     group: str
     paymentRequestTo: list[dict]
     isVerified: bool | None = None
-    userPrice: int
-    overduePrice: int | None = None
+    userPrice: Decimal
+    overduePrice: Decimal | None = None
     orderId: str | None = None
     reference: str | None = None

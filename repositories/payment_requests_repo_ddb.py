@@ -66,15 +66,27 @@ class PaymentRequestsRepo:
     
     def list_by_status(self, status: str, account_id: str) -> Iterable[dict[str, Any]]:
         """List payment requests by status within the specified account"""
+        status = getattr(status, "value", status)
+        return [i for i in self.list_by_status_all_accounts(status) if i.get("account_id") == account_id]
+
+    def list_by_status_all_accounts(self, status: str) -> list[dict[str, Any]]:
+        """All payment requests in `status`, across accounts (status GSI, paginated)."""
+        status = getattr(status, "value", status)
         try:
-            resp = self._table.query(
-                IndexName=self._status_gsi,
-                KeyConditionExpression=Key("payment_status").eq(status),
-                FilterExpression=Attr("account_id").eq(account_id)
-            )
-            return resp.get("Items", [])
+            items: list[dict[str, Any]] = []
+            kwargs: dict[str, Any] = {
+                "IndexName": self._status_gsi,
+                "KeyConditionExpression": Key("payment_status").eq(status),
+            }
+            while True:
+                resp = self._table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                last = resp.get("LastEvaluatedKey")
+                if not last:
+                    return items
+                kwargs["ExclusiveStartKey"] = last
         except Exception:
-            return [i for i in self.list_all(account_id) if i.get("payment_status") == status]
+            return _scan_all(self._table, FilterExpression=Attr("payment_status").eq(status))
 
 
     # ------------- Writes -------------

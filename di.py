@@ -153,6 +153,9 @@ def get_order_service() -> OrderService:
         OrderRepo(),
         get_payment_request_service(),
         get_notification_orchestator(),
+        product_repo=ProductRepo(),
+        membership_svc=get_membership_service(),
+        s3=S3Adapter(),
     )
 
 def get_membership_service() -> MembershipService:

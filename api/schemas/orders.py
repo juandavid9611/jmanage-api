@@ -1,7 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 from core.casing import camel_alias
+from services.order_rules import MAX_ORDER_LINES, ORDER_STATUSES
 
 
 class CamelModel(BaseModel):
@@ -53,7 +54,7 @@ class Customer(CamelModel):
 
 
 class Delivery(CamelModel):
-    shipment_amount: int
+    shipment_amount: float
     delivery_type: str
 
 
@@ -92,16 +93,35 @@ class Order(CamelModel):
     delivery_check: Optional[CheckMark] = None
 
 
+class OrderLineIn(CamelModel):
+    """Order line sent by the client. Everything else (name, price, image) is read server-side."""
+    product_id: str = Field(min_length=1)
+    quantity: int = Field(ge=1, le=1000)
+    color: Optional[str] = None
+    size: Optional[str] = None
+
+
+class CustomerIn(CamelModel):
+    """Customer contact data. `id` is ignored: the server binds it to the token's sub."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: str = ""
+    avatar_url: Optional[str] = None
+
+
+class DeliveryIn(CamelModel):
+    delivery_type: str = ""
+    shipment_amount: Optional[float] = None  # ignored; shipping is taken from `shipping`
+
+
 class OrderCreate(CamelModel):
-    workspace_id: str
-    items: List[OrderItem]
-    subtotal: float
-    shipping: float
-    discount: float
-    customer: Customer
-    delivery: Delivery
-    total_amount: float
-    total_quantity: int
+    # subtotal / totalAmount / totalQuantity sent by older clients are ignored (recomputed).
+    workspace_id: str = Field(min_length=1)
+    items: List[OrderLineIn] = Field(min_length=1, max_length=MAX_ORDER_LINES)
+    shipping: float = Field(default=0, ge=0)
+    discount: float = Field(default=0, ge=0)
+    customer: CustomerIn = CustomerIn()
+    delivery: DeliveryIn = DeliveryIn()
     shipping_address: ShippingAddress
     payment: Payment
 
@@ -109,3 +129,10 @@ class OrderCreate(CamelModel):
 class OrderUpdate(CamelModel):
     status: Optional[str] = None
     delivery: Optional[Delivery] = None
+
+    @field_validator("status")
+    @classmethod
+    def _valid_status(cls, v):
+        if v is not None and v not in ORDER_STATUSES:
+            raise ValueError(f"status must be one of {ORDER_STATUSES}")
+        return v

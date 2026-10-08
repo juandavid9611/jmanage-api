@@ -1,3 +1,4 @@
+import logging
 from time import time
 from uuid import uuid4
 from typing import Any
@@ -8,6 +9,16 @@ from repositories.order_repo_ddb import OrderRepo
 from services.notification_orchestator import Notifications
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
 from api.schemas.payments import PaymentRequestStatus, BulkPutPaymentRequest
+from services.order_rules import can_transition
+
+logger = logging.getLogger(__name__)
+
+
+def _plain_number(value):
+    """Decimal -> int when integral, else float (JSON-friendly for notifications)."""
+    if value is None:
+        return None
+    return int(value) if value == value.to_integral_value() else float(value)
 
 
 PR_STATUS_TO_ORDER_EVENT = {
@@ -66,13 +77,16 @@ class PaymentRequestService:
             #TODO User URL is create with GET presigned url, should be populated later with a GET user with other attributes
             new_payment_request = self._get_new_payment_request(bulk_item, user, created_time, account_id)
             self.repo.put(new_payment_request)
-            self.notifier.payment_created(
-                email=user["email"],
-                user_name=user["name"],
-                concept=bulk_item.concept,
-                amount=bulk_item.userPrice,
-                due_date=bulk_item.dueDate
-            )
+            try:
+                self.notifier.payment_created(
+                    email=user["email"],
+                    user_name=user["name"],
+                    concept=bulk_item.concept,
+                    amount=_plain_number(bulk_item.userPrice),
+                    due_date=bulk_item.dueDate
+                )
+            except Exception:
+                logger.exception("payment_created notification failed for payment request %s", new_payment_request["id"])
             new_payment_requests.append(self._map_payment_request(new_payment_request, get_presigned_url=False))
         return new_payment_requests
 
@@ -163,11 +177,32 @@ class PaymentRequestService:
             self._append_order_event_for_status(new_item, account_id)
         return payment_request_id
 
+    def cancel_for_order(self, payment_request_id: str, account_id: str) -> bool:
+        """Cancel the payment request linked to a cancelled order (only if still open)."""
+        item = self.repo.get(payment_request_id, account_id)
+        if not item:
+            return False
+        open_states = {
+            PaymentRequestStatus.PENDING.value,
+            PaymentRequestStatus.OVERDUE.value,
+            PaymentRequestStatus.APPROVAL_PENDING.value,
+        }
+        current = item.get("payment_status")
+        current = current.value if hasattr(current, "value") else current
+        if current not in open_states:
+            return False
+        self.repo.update(payment_request_id, account_id, {"payment_status": PaymentRequestStatus.CANCELED})
+        return True
+
     def process_overdue_payments(self) -> list[dict[str, Any]]:
-        accounts = ['vittoriacd']
+        """Mark overdue every pending request of every account that has pending requests."""
+        pending_by_account: dict[str, list[dict[str, Any]]] = {}
+        for item in self.repo.list_by_status_all_accounts(PaymentRequestStatus.PENDING.value):
+            if item.get("account_id"):
+                pending_by_account.setdefault(item["account_id"], []).append(item)
+
         overdue_payments = []
-        for account_id in accounts:
-            pending_items = self.repo.list_by_status(PaymentRequestStatus.PENDING, account_id)
+        for account_id, pending_items in pending_by_account.items():
             datetime_now = datetime.now()
             account_overdue_payments = []
             for item in pending_items:
@@ -175,7 +210,7 @@ class PaymentRequestService:
                 due_datetime = due_datetime.replace(tzinfo=None)
                 if due_datetime < datetime_now:
                     overdue_price = item.get("overdue_price", 0)
-                    new_price = item["user_price"] if overdue_price == 0 else overdue_price
+                    new_price = item["user_price"] if not overdue_price else overdue_price
                     self.repo.update(
                         item["id"],
                         account_id,
@@ -202,7 +237,7 @@ class PaymentRequestService:
             self.notifier.overdue_payments_processed(
                 account_id=account_id,
                 user_name=self._payments_username,
-                pending_count=len(list(pending_items)),
+                pending_count=len(pending_items),
                 overdue_payments=account_overdue_payments,
             )
         return overdue_payments
@@ -226,8 +261,29 @@ class PaymentRequestService:
         }
         try:
             self.order_repo.append_event(order_id, account_id, event)
-        except Exception as e:
-            print(f"[pr] failed to append order event {event_type} to order {order_id}: {e}")
+        except Exception:
+            logger.exception("failed to append order event %s to order %s", event_type, order_id)
+        if status == PaymentRequestStatus.PAID.value:
+            self._mark_order_paid(order_id, account_id)
+
+    def _mark_order_paid(self, order_id: str, account_id: str) -> None:
+        """A paid payment request moves its order to `paid` (when the transition is allowed)."""
+        try:
+            order = self.order_repo.get_by_id(order_id, account_id)
+            if not order or order.get("status") == "paid":
+                return
+            if not can_transition(order.get("status"), "paid"):
+                logger.warning("Payment paid but order %s is %s; not moved to paid", order_id, order.get("status"))
+                return
+            event = {
+                "type": "order_status_changed",
+                "title": "Orden: paid",
+                "time": datetime.now(timezone.utc).isoformat(),
+                "meta": {"from": order.get("status"), "to": "paid", "reason": "payment_paid"},
+            }
+            self.order_repo.transition_status(order_id, account_id, order["status"], "paid", event)
+        except Exception:
+            logger.exception("failed to mark order %s as paid", order_id)
 
     def _map_payment_request(self, item: dict[str, Any], get_presigned_url=True) -> dict[str, Any]:
         item["createDate"] = item.pop("create_date", None)
