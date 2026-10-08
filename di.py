@@ -140,7 +140,13 @@ def get_user_service() -> UserService:
 def get_workspace_service() -> WorkspaceService:
     repo = WorkspaceRepo()
     membership_svc = get_membership_service()
-    return WorkspaceService(repo, membership_svc=membership_svc)
+    return WorkspaceService(
+        repo,
+        membership_svc=membership_svc,
+        account_svc=get_account_service(),
+        calendar_repo=CalendarRepo(),
+        tour_repo=TourRepo(),
+    )
 
 
 def get_product_service() -> ProductService:
