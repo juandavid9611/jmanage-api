@@ -76,6 +76,9 @@ class TrainingSessionService:
             "workspace_id": workspace_id,
             "title": body.title.strip(),
             "date": body.date,
+            "location": body.location,
+            "team_group": body.team_group,
+            "objective": body.objective,
             "status": DRAFT,
             "exercises": normalize_exercises([e.model_dump() for e in body.exercises]),
             "review_comment": None,
@@ -101,6 +104,9 @@ class TrainingSessionService:
             {
                 "title": body.title.strip(),
                 "date": body.date,
+                "location": body.location,
+                "team_group": body.team_group,
+                "objective": body.objective,
                 "exercises": normalize_exercises([e.model_dump() for e in body.exercises]),
                 "updated_at": _now(),
             },
@@ -169,6 +175,9 @@ class TrainingSessionService:
             "workspaceId": item.get("workspace_id"),
             "title": item.get("title"),
             "date": item.get("date"),
+            "location": item.get("location", ""),
+            "teamGroup": item.get("team_group", ""),
+            "objective": item.get("objective", ""),
             "status": item.get("status"),
             "exercises": [
                 {

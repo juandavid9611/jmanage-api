@@ -27,6 +27,9 @@ class ExerciseIn(CamelModel):
 class SessionIn(CamelModel):
     title: str = Field(min_length=1, max_length=200)
     date: str = Field(min_length=1, max_length=40)
+    location: str = Field(default="", max_length=200)
+    team_group: str = Field(default="", max_length=100)
+    objective: str = Field(default="", max_length=2000)
     exercises: list[ExerciseIn] = Field(default_factory=list, max_length=50)
 
 
