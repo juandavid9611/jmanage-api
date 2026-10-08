@@ -239,14 +239,15 @@ class CalendarService:
         new_match_id = item.clubMatchId or None
         if new_match_id == old_match_id:
             return
+        # Validate the new match first so a bad id can't leave the old link half-cleared.
+        new_match = self._get_linkable_match(new_match_id, existing.get("user_group") or item.group, account_id)
         if old_match_id:
             old_match = self._get_match(old_match_id, account_id)
             if old_match and old_match.get("calendar_event_id") == event_id:
                 self.club_match_repo.update(old_match_id, account_id, {"calendar_event_id": None})
         updates["club_match_id"] = new_match_id
-        if new_match_id:
-            match = self._get_linkable_match(new_match_id, item.group, account_id)
-            self._link_match(match, event_id, account_id)  # date/rival sync happens after the update
+        if new_match:
+            self._link_match(new_match, event_id, account_id)  # date/rival sync happens after the update
     
     def _map_attribute_key(self, key: str) -> str:
         if key in self._custom_mapping_keys:
