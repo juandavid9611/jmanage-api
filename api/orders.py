@@ -3,36 +3,58 @@ from typing import List, Optional
 from api.schemas.orders import Order, OrderCreate, OrderUpdate, OrderCheckUpdate
 from services.order_service import OrderService
 from di import get_order_service
-from auth import PermissionChecker, get_account_id, get_current_user
+from auth import PermissionChecker, get_account_id, get_account_role, get_current_user
+from services.order_rules import ShopError
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+_STATUS_BY_KIND = {
+    "invalid": 400,
+    "forbidden": 403,
+    "not_found": 404,
+    "conflict": 409,
+    "out_of_stock": 409,
+    "payment_failed": 502,
+}
+
+
+def _http_error(e: ShopError) -> HTTPException:
+    return HTTPException(status_code=_STATUS_BY_KIND.get(e.kind, 400), detail=e.message)
 
 @router.get("", response_model=List[Order], dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
 async def list_orders(
     workspace_id: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_account_role),
     account_id: str = Depends(get_account_id),
     svc: OrderService = Depends(get_order_service),
 ):
-    return svc.list_orders(account_id, workspace_id=workspace_id)
+    return svc.list_orders(account_id, workspace_id=workspace_id, user_id=user["sub"], is_admin=role == "admin")
 
 @router.get("/{order_id}", response_model=Order, dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
 async def get_order(
-    order_id: str, 
+    order_id: str,
+    user: dict = Depends(get_current_user),
+    role: str = Depends(get_account_role),
     account_id: str = Depends(get_account_id),
     svc: OrderService = Depends(get_order_service)
 ):
-    order = svc.get_order(order_id, account_id)
+    order = svc.get_order(order_id, account_id, user_id=user["sub"], is_admin=role == "admin")
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
 
 @router.post("", response_model=Order, dependencies=[Depends(PermissionChecker(required_permissions=["admin", "user"]))])
 async def create_order(
-    payload: OrderCreate, 
+    payload: OrderCreate,
+    user: dict = Depends(get_current_user),
     account_id: str = Depends(get_account_id),
     svc: OrderService = Depends(get_order_service)
 ):
-    return svc.create_order(payload, account_id)
+    try:
+        return svc.create_order(payload, account_id, user["sub"], token_email=user.get("email"))
+    except ShopError as e:
+        raise _http_error(e)
 
 @router.put("/{order_id}", response_model=Order, dependencies=[Depends(PermissionChecker(required_permissions=["admin"]))])
 async def update_order(
@@ -43,8 +65,8 @@ async def update_order(
 ):
     try:
         order = svc.update_order(order_id, account_id, payload)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ShopError as e:
+        raise _http_error(e)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
@@ -91,7 +113,10 @@ async def delete_order(
     account_id: str = Depends(get_account_id),
     svc: OrderService = Depends(get_order_service)
 ):
-    success = svc.delete_order(order_id, account_id)
+    try:
+        success = svc.delete_order(order_id, account_id)
+    except ShopError as e:
+        raise _http_error(e)
     if not success:
         raise HTTPException(status_code=404, detail="Order not found")
-    return {"message": "Order deleted"}
+    return {"message": "Order cancelled"}
