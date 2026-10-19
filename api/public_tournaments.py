@@ -23,6 +23,7 @@ from services.tournament_match_service import TournamentMatchService
 from services.tournament_match_event_service import TournamentMatchEventService
 from services.tournament_player_service import TournamentPlayerService
 from services.tournament_stats_service import TournamentStatsService
+from core.public_fields import public_player, public_team
 from services.tournament_team_service import TournamentTeamService
 
 router = APIRouter(prefix="/public/tournaments", tags=["public"])
@@ -73,7 +74,7 @@ async def get_public_teams(
     team_svc: TournamentTeamService = Depends(get_tournament_team_service),
 ):
     _get_public_or_404(tournament_id, svc)
-    return team_svc.list_teams(tournament_id)
+    return [public_team(team) for team in team_svc.list_teams(tournament_id)]
 
 
 # ── Matches ────────────────────────────────────────────────────────────
@@ -157,7 +158,7 @@ async def get_public_players(
     player_svc: TournamentPlayerService = Depends(get_tournament_player_service),
 ):
     _get_public_or_404(tournament_id, svc)
-    return player_svc.list_players(tournament_id, team_id=team_id)
+    return [public_player(player) for player in player_svc.list_players(tournament_id, team_id=team_id)]
 
 
 # ── Match detail (single match with events) ────────────────────────────
