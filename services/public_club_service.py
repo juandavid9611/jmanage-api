@@ -18,6 +18,7 @@ CACHE_MAX_ENTRIES = 256
 MAX_RECENT_MATCHES = 8
 MAX_UPCOMING_MATCHES = 5
 MAX_TOURNAMENTS = 20
+MAX_CATEGORIES = 30
 MAX_TOURS_SCANNED = 5000
 MAX_TITLE_LEN = 80
 PLAYER_ROLE = "user"
@@ -125,6 +126,7 @@ class PublicClubService:
         now = datetime.fromtimestamp(now_ts, tz=timezone.utc)
         tours = self.tour_repo.list_for_public_overview(account_id, MAX_TOURS_SCANNED)
         match_stats = self._tour_stats(tours, now)
+        active_players, categories = self._players_and_categories(account_id)
 
         return {
             "club": {
@@ -132,10 +134,11 @@ class PublicClubService:
                 "logoUrl": self._logo_url(account),
             },
             "stats": {
-                "activePlayers": self._count_active_players(account_id),
-                "categories": len(list(self.workspace_repo.list_all(account_id))),
+                "activePlayers": active_players,
+                "categories": len(categories),
                 **match_stats["stats"],
             },
+            "categories": categories,
             "recentMatches": match_stats["recent"],
             "upcomingMatches": match_stats["upcoming"],
             "tournaments": self._public_tournaments(account_id),
@@ -161,14 +164,31 @@ class PublicClubService:
         except Exception:
             return None
 
-    def _count_active_players(self, account_id: str) -> int:
-        memberships = self.membership_repo.list_by_account(account_id)
-        # Distinct people, counted only; ids are never emitted.
-        return len({
-            m.get("user_id")
-            for m in memberships
-            if m.get("status", "active") == "active" and m.get("role") == PLAYER_ROLE and m.get("user_id")
-        })
+    def _players_and_categories(self, account_id: str) -> tuple[int, list[dict[str, Any]]]:
+        """One membership read -> club-wide distinct players and per-category counts.
+
+        Distinct people are counted only; ids are never emitted. Categories are an
+        allowlist of {id, name, activePlayers}, sorted by name, capped.
+        """
+        everyone: set[Any] = set()
+        per_workspace: dict[Any, set[Any]] = {}
+        for m in self.membership_repo.list_by_account(account_id):
+            if m.get("status", "active") != "active" or m.get("role") != PLAYER_ROLE or not m.get("user_id"):
+                continue
+            everyone.add(m["user_id"])
+            per_workspace.setdefault(m.get("workspace_id"), set()).add(m["user_id"])
+
+        workspaces = [w for w in self.workspace_repo.list_all(account_id) if w.get("id")]
+        workspaces.sort(key=lambda w: (_clean_text(w.get("name"), 120).casefold(), str(w["id"])))
+        categories = [
+            {
+                "id": w["id"],
+                "name": _clean_text(w.get("name"), 120),
+                "activePlayers": len(per_workspace.get(w["id"], ())),
+            }
+            for w in workspaces[:MAX_CATEGORIES]
+        ]
+        return len(everyone), categories
 
     # ── Tours -> aggregates ──────────────────────────────────────────
 

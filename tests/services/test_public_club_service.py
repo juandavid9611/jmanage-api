@@ -40,7 +40,9 @@ class FakeWorkspaceRepo:
         self.n = n
 
     def list_all(self, account_id):
-        return [{"id": f"ws{i}", "name": f"Sub {i}"} for i in range(self.n)]
+        if isinstance(self.n, list):
+            return self.n
+        return [{"id": f"ws{i}", "name": f"Sub {i}", "plan": "ws-plan-secret", "logo_key": "wslogo.png"} for i in range(self.n)]
 
 
 class FakeTourRepo:
@@ -134,12 +136,12 @@ def build(acc=None, tours=None, tournaments=None, teams=None, members=None, cate
 
 
 def members(n_players=4):
-    out = [{"user_id": f"p{i}", "role": "user", "status": "active", "workspace_id": "w"} for i in range(n_players)]
+    out = [{"user_id": f"p{i}", "role": "user", "status": "active", "workspace_id": "ws0"} for i in range(n_players)]
     out += [
-        {"user_id": "p0", "role": "user", "status": "active", "workspace_id": "w2"},  # same person, 2nd category
-        {"user_id": "pi", "role": "user", "status": "inactive", "workspace_id": "w"},
-        {"user_id": "adm", "role": "admin", "status": "active", "workspace_id": "w"},
-        {"user_id": "coach", "role": "coach", "status": "active", "workspace_id": "w"},
+        {"user_id": "p0", "role": "user", "status": "active", "workspace_id": "ws1"},  # same person, 2nd category
+        {"user_id": "pi", "role": "user", "status": "inactive", "workspace_id": "ws0"},
+        {"user_id": "adm", "role": "admin", "status": "active", "workspace_id": "ws0"},
+        {"user_id": "coach", "role": "coach", "status": "active", "workspace_id": "ws0"},
     ]
     return out
 
@@ -279,7 +281,8 @@ class TestTournaments(unittest.TestCase):
 
 class TestPrivacy(unittest.TestCase):
     EXPECTED = {
-        "top": {"club", "stats", "recentMatches", "upcomingMatches", "tournaments"},
+        "top": {"club", "stats", "categories", "recentMatches", "upcomingMatches", "tournaments"},
+        "category": {"id", "name", "activePlayers"},
         "club": {"name", "logoUrl"},
         "stats": {"activePlayers", "categories", "matchesPlayed", "wins", "draws", "losses", "goalsFor",
                   "goalsAgainst", "trainingsHeld", "averageAttendancePct"},
@@ -288,7 +291,7 @@ class TestPrivacy(unittest.TestCase):
         "tournament": {"id", "name", "status", "season", "champion"},
         "champion": {"name", "shortName", "logoUrl"},
     }
-    SECRETS = ("secret.example", "+57 300", "avatars/", "u-alice", "u-bob", "Boss", "owner@", "ws_main")
+    SECRETS = ("secret.example", "+57 300", "avatars/", "u-alice", "u-bob", "Boss", "owner@", "ws_main", "ws-plan-secret", "wslogo")
 
     def _out(self):
         final = {"final": [{"winner_team_id": "tm1"}]}
@@ -309,6 +312,9 @@ class TestPrivacy(unittest.TestCase):
         self.assertEqual(set(out), e["top"])
         self.assertEqual(set(out["club"]), e["club"])
         self.assertEqual(set(out["stats"]), e["stats"])
+        self.assertTrue(out["categories"])
+        for c in out["categories"]:
+            self.assertEqual(set(c), e["category"])
         for m in out["recentMatches"]:
             self.assertEqual(set(m), e["recent"])
         for m in out["upcomingMatches"]:
@@ -350,6 +356,55 @@ class TestPrivacy(unittest.TestCase):
         self.assertEqual(self._out()["club"]["logoUrl"], "https://bucket.s3.us-west-2.amazonaws.com/acc/logo.png")
         self.assertIsNone(build(acc=account(logo="")).get_overview("vittoriacd")["club"]["logoUrl"])
         self.assertEqual(build(acc=account(logo="https://x/y.png")).get_overview("vittoriacd")["club"]["logoUrl"], "https://x/y.png")
+
+
+def ws(i, name=None):
+    return {"id": f"c{i}", "name": name if name is not None else f"Cat {i}", "plan": "x", "logo_key": "y"}
+
+
+def mem(user, workspace, role="user", status="active"):
+    return {"user_id": user, "workspace_id": workspace, "role": role, "status": status}
+
+
+class TestCategories(unittest.TestCase):
+    def _cats(self, workspaces, members_):
+        out = build(categories=workspaces, members=members_).get_overview("vittoriacd")
+        self.assertEqual(out["stats"]["categories"], len(out["categories"]))
+        return out["categories"]
+
+    def test_per_category_counts(self):
+        cats = self._cats(
+            [ws(1, "Sub 12"), ws(2, "Sub 14"), ws(3, "Empty")],
+            [
+                mem("a", "c1"), mem("b", "c1"), mem("a", "c2"),  # a is in two categories: counted in both
+                mem("a", "c1"),  # duplicate membership row: still one person
+                mem("adm", "c1", role="admin"), mem("co", "c1", role="coach"),
+                mem("off", "c2", status="inactive"), mem("dis", "c2", status="disabled"),
+                mem("x", "other_ws"),
+            ],
+        )
+        self.assertEqual(cats, [
+            {"id": "c3", "name": "Empty", "activePlayers": 0},
+            {"id": "c1", "name": "Sub 12", "activePlayers": 2},
+            {"id": "c2", "name": "Sub 14", "activePlayers": 1},
+        ])
+
+    def test_club_total_still_distinct_people(self):
+        out = build(categories=[ws(1), ws(2)], members=[mem("a", "c1"), mem("a", "c2"), mem("b", "c2")]) \
+            .get_overview("vittoriacd")
+        self.assertEqual(out["stats"]["activePlayers"], 2)
+
+    def test_sorted_by_name_case_insensitive(self):
+        cats = self._cats([ws(1, "beta"), ws(2, "Alpha"), ws(3, "Charlie"), ws(4, "alpha2")], [])
+        self.assertEqual([c["name"] for c in cats], ["Alpha", "alpha2", "beta", "Charlie"])
+
+    def test_capped_at_30(self):
+        cats = self._cats([ws(i, f"Cat {i:03d}") for i in range(45)], [])
+        self.assertEqual(len(cats), pcs.MAX_CATEGORIES)
+        self.assertEqual(cats[0]["name"], "Cat 000")
+
+    def test_no_categories(self):
+        self.assertEqual(self._cats([], [mem("a", "c1")]), [])
 
 
 class TestCache(unittest.TestCase):
