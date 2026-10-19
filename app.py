@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
         "http://localhost:3030",
         "https://dev-jmanage-web.vercel.app",
         "https://sportsmanage.app",
+        "https://www.sportsmanage.app",
     ]
     
     app.add_middleware(
