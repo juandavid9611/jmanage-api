@@ -38,11 +38,20 @@ class PaymentRequestsRepo:
     def list_all(self, account_id: str) -> Iterable[dict[str, Any]]:
         """List all payment requests for the specified account"""
         try:
-            resp = self._table.query(
-                IndexName=self._account_gsi,
-                KeyConditionExpression=Key("account_id").eq(account_id)
-            )
-            return resp.get("Items", [])
+            # A query returns at most 1 MB per page: follow LastEvaluatedKey or large
+            # accounts are silently truncated.
+            items: list[dict[str, Any]] = []
+            kwargs: dict[str, Any] = {
+                "IndexName": self._account_gsi,
+                "KeyConditionExpression": Key("account_id").eq(account_id),
+            }
+            while True:
+                resp = self._table.query(**kwargs)
+                items.extend(resp.get("Items", []))
+                last = resp.get("LastEvaluatedKey")
+                if not last:
+                    return items
+                kwargs["ExclusiveStartKey"] = last
         except Exception:
             # Fallback to scan with filter
             return _scan_all(
