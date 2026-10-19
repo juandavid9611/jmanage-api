@@ -12,8 +12,10 @@ class MembershipService:
         """Get active memberships for a user across all accounts"""
         return self.repo.get_active_memberships(user_id)
     
-    def get_user_account_memberships(self, user_id: str, account_id: str) -> List[Dict[str, Any]]:
+    def get_user_account_memberships(self, user_id: str, account_id: str, include_workspaceless: bool = False) -> List[Dict[str, Any]]:
         """Get all memberships for a user in a specific account"""
+        if include_workspaceless:
+            return self.repo.get_user_account_memberships(user_id, account_id, include_workspaceless=True)
         return self.repo.get_user_account_memberships(user_id, account_id)
     
     def list_account_memberships(self, account_id: str, include_workspaceless: bool = False) -> List[Dict[str, Any]]:

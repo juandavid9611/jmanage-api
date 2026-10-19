@@ -53,3 +53,14 @@ class PutUser(BaseModel):
     status: str
     shirtNumber: str
     
+
+from pydantic import ConfigDict, Field
+from core.casing import camel_alias
+
+
+class BulkUserStatusRequest(BaseModel):
+    """Body for POST /users/bulk-status (camelCase on the wire)."""
+    model_config = ConfigDict(alias_generator=camel_alias, populate_by_name=True)
+
+    user_ids: list[str] = Field(min_length=1, max_length=200)
+    disabled: bool

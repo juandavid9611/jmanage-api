@@ -112,27 +112,32 @@ class MembershipRepo:
             print(f"Error querying memberships: {e}")
             raise e
     
-    def get_user_account_memberships(self, user_id: str, account_id: str) -> List[Dict[str, Any]]:
-        """Get ALL memberships for a user in a specific account"""
+    def get_user_account_memberships(self, user_id: str, account_id: str, include_workspaceless: bool = False) -> List[Dict[str, Any]]:
+        """Get ALL memberships for a user in a specific account.
+
+        Legacy rows with no workspace in the SK are skipped unless include_workspaceless=True
+        (they then come back with workspace_id=None)."""
         try:
-            resp = self._table.query(
-                KeyConditionExpression=Key("PK").eq(self._user_pk(user_id)) & 
-                                      Key("SK").begins_with(f"ACCOUNT#{account_id}#")
-            )
+            # Legacy SK is "ACCOUNT#{id}" (no trailing '#'), so widen the prefix and
+            # filter by the parsed account id to avoid matching ids that share a prefix.
+            prefix = f"ACCOUNT#{account_id}" if include_workspaceless else f"ACCOUNT#{account_id}#"
+            cond = Key("PK").eq(self._user_pk(user_id)) & Key("SK").begins_with(prefix)
+            resp = self._table.query(KeyConditionExpression=cond)
             items = resp.get("Items", [])
-            
+
             while "LastEvaluatedKey" in resp:
                 resp = self._table.query(
-                    KeyConditionExpression=Key("PK").eq(self._user_pk(user_id)) & 
-                                          Key("SK").begins_with(f"ACCOUNT#{account_id}#"),
+                    KeyConditionExpression=cond,
                     ExclusiveStartKey=resp["LastEvaluatedKey"]
                 )
                 items.extend(resp.get("Items", []))
-            
+
             memberships = []
             for it in items:
+                if self._parse_account_id(it.get("SK", "")) != account_id:
+                    continue
                 workspace_id = self._parse_workspace_id(it.get("SK", ""))
-                if not workspace_id:
+                if not workspace_id and not include_workspaceless:
                     print(f"WARNING: Membership has no workspace in SK: {it.get('PK')}/{it.get('SK')}")
                     continue
                 memberships.append({

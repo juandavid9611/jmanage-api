@@ -12,6 +12,10 @@ from services.membership_service import MembershipService
 
 from services.tour_service import TourService
 
+class UserNotFound(ValueError):
+    """User does not exist or has no membership in the requested account."""
+
+
 class UserService:
     def __init__(
             self, repo: UserRepo, s3: S3Adapter, notifier: Notifications,
@@ -48,7 +52,12 @@ class UserService:
         # Every user carries ALL of their active memberships in the account,
         # regardless of the workspace filter.
         memberships_by_user: dict[str, list[dict[str, Any]]] = {}
+        # Per-account status: user_status is global (shared across accounts), so for
+        # this account a user is DISABLED iff every workspace membership here is disabled.
+        ws_rows_by_user: dict[str, list[dict[str, Any]]] = {}
         for m in all_memberships:
+            if m.get("user_id") and m.get("workspace_id"):
+                ws_rows_by_user.setdefault(m["user_id"], []).append(m)
             if m.get("user_id") and m.get("workspace_id") and m.get("status", "active") == "active":
                 memberships_by_user.setdefault(m["user_id"], []).append(
                     {"workspace_id": m.get("workspace_id"), "role": m.get("role")}
@@ -59,8 +68,9 @@ class UserService:
         # One row per user. With a workspace filter, group/role come from that
         # workspace's membership; without it, from the user's first membership.
         rows: dict[str, dict[str, Any]] = {}
-        # Real workspaces first, so a user's row comes from a category when they have one.
-        for m in sorted(all_memberships, key=lambda x: (x.get("workspace_id") is None, x.get("workspace_id") or "")):
+        # Real workspaces first (active before disabled), so a user's row comes from a category when they have one.
+        for m in sorted(all_memberships, key=lambda x: (
+                x.get("workspace_id") is None, x.get("status", "active") != "active", x.get("workspace_id") or "")):
             uid = m.get("user_id")
             if not uid or uid in rows:
                 continue
@@ -76,6 +86,10 @@ class UserService:
                 user["user_group"] = m.get("workspace_id")  # Temporary for mapping
                 user["role"] = m.get("role")
                 user["memberships"] = memberships_by_user.get(uid, [])
+                ws_rows = ws_rows_by_user.get(uid)
+                if ws_rows:  # users with only legacy workspace-less rows keep the global status
+                    any_active = any(r.get("status", "active") == "active" for r in ws_rows)
+                    user["user_status"] = UserStatus.ACTIVE if any_active else UserStatus.DISABLED
                 items.append(user)
 
         if not include_disabled:
@@ -131,33 +145,60 @@ class UserService:
         # Delete all memberships for this user
         self.membership_svc.delete_all_user_memberships(user_id)
 
-    def enable(self, user_id: str, account_id: str) -> None:
-        user = self.repo.get(user_id, account_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found.")
-        self.cog_wrapper.enable_user(user["email"])
-        self.repo.update(user_id, account_id, {"user_status": UserStatus.ACTIVE})
-        
-        # Enable all memberships for this user in this account
-        memberships = self.membership_svc.get_user_account_memberships(user_id, account_id)
-        for membership in memberships:
-            workspace_id = membership.get("workspace_id")
-            if workspace_id:
-                self.membership_svc.enable_membership(user_id, account_id, workspace_id)
+    # --- enable / disable -------------------------------------------------
+    # user_status and the Cognito account are GLOBAL (one pool shared by all accounts);
+    # memberships are per account. Disabling a user for one account therefore only
+    # disables that account's memberships, and touches Cognito/user_status only when
+    # the user has no ACTIVE membership left in any other account.
 
-    def disable(self, user_id: str, account_id: str) -> None:
-        user = self.repo.get(user_id, account_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found.")
+    def _account_rows(self, user_id: str, account_id: str) -> list[dict[str, Any]]:
+        """All of the user's membership rows in this account (legacy workspace-less included)."""
+        return self.membership_svc.get_user_account_memberships(user_id, account_id, include_workspaceless=True)
+
+    def _has_other_active_account(self, user_id: str, account_id: str) -> bool:
+        return any(m.get("account_id") != account_id for m in self.membership_svc.get_user_memberships(user_id))
+
+    def _load_member(self, user_id: str, account_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        rows = self._account_rows(user_id, account_id)
+        user = self.repo.get(user_id, account_id) if rows else None
+        if not rows or not user:
+            raise UserNotFound(f"User {user_id} not found.")
+        return user, [r for r in rows if r.get("workspace_id")]
+
+    def enable(self, user_id: str, account_id: str) -> dict[str, str]:
+        """Enable the user in this account; re-enable globally if they are globally disabled."""
+        user, ws_rows = self._load_member(user_id, account_id)
+        to_enable = [r for r in ws_rows if r.get("status", "active") != "active"]
+        globally_disabled = user.get("user_status") == UserStatus.DISABLED
+        if not to_enable and not globally_disabled:
+            return {"status": "skipped", "cognito": "n/a"}
+        for r in to_enable:
+            self.membership_svc.enable_membership(user_id, account_id, r["workspace_id"])
+        if globally_disabled:
+            self.cog_wrapper.enable_user(user["email"])
+            self.repo.update(user_id, account_id, {"user_status": UserStatus.ACTIVE})
+            return {"status": "enabled", "cognito": "changed"}
+        return {"status": "enabled", "cognito": "n/a"}
+
+    def disable(self, user_id: str, account_id: str) -> dict[str, str]:
+        """Disable the user in this account. Cognito + user_status are only disabled when
+        the user has no active membership in any other account."""
+        user, ws_rows = self._load_member(user_id, account_id)
+        other_active = self._has_other_active_account(user_id, account_id)
+        all_disabled = all(r.get("status", "active") != "active" for r in ws_rows)
+        globally_disabled = user.get("user_status") == UserStatus.DISABLED
+        if all_disabled and (other_active or globally_disabled):
+            return {"status": "skipped", "cognito": "n/a"}
+        # Memberships first: that is what revokes access to this account; a Cognito
+        # failure afterwards is reconciled by simply retrying (idempotent).
+        for r in ws_rows:
+            if r.get("status", "active") == "active":
+                self.membership_svc.disable_membership(user_id, account_id, r["workspace_id"])
+        if other_active:
+            return {"status": "disabled", "cognito": "kept"}
         self.cog_wrapper.disable_user(user["email"])
         self.repo.update(user_id, account_id, {"user_status": UserStatus.DISABLED})
-        
-        # Disable all memberships for this user in this account
-        memberships = self.membership_svc.get_user_account_memberships(user_id, account_id)
-        for membership in memberships:
-            workspace_id = membership.get("workspace_id")
-            if workspace_id:
-                self.membership_svc.disable_membership(user_id, account_id, workspace_id)
+        return {"status": "disabled", "cognito": "changed"}
 
     def get_tour_preferences(self, user_id: str, account_id: str) -> dict:
         item = self.repo.get(user_id, account_id)

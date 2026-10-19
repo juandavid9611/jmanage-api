@@ -1,10 +1,11 @@
 from auth import get_current_user
 from api.schemas.files import FileSpec
-from di import get_user_service
+from di import get_user_service, get_bulk_user_status_service
 from auth import PermissionChecker, get_account_id
-from services.user_service import UserService
+from services.user_service import UserService, UserNotFound
+from services.bulk_user_status_service import BulkUserStatusService
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from api.schemas.users import PutUser, CreateUser, PutUserAvatar, PutUserMetrics, PutTourPreferences
+from api.schemas.users import PutUser, CreateUser, PutUserAvatar, PutUserMetrics, PutTourPreferences, BulkUserStatusRequest
 from repositories.tournament_team_repo_ddb import TournamentTeamRepo
 from repositories.tournament_repo_ddb import TournamentRepo
 
@@ -69,6 +70,19 @@ def list_team_owner_teams(
     return result
 
 
+@router.post("/bulk-status", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
+async def bulk_user_status(
+    body: BulkUserStatusRequest,
+    user: dict = Depends(get_current_user),
+    account_id: str = Depends(get_account_id),
+    svc: BulkUserStatusService = Depends(get_bulk_user_status_service),
+):
+    """Enable/disable many users in this account (admin only). Per-user results; never touches
+    the caller; refuses to remove the account's last active admin. Declared before the
+    /{user_id} routes so "bulk-status" is never captured as a user id."""
+    return svc.apply(account_id, user["sub"], body.user_ids, body.disabled)
+
+
 @router.get("", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])
 async def list_users(
     workspace_id: str = Query(None), 
@@ -130,7 +144,10 @@ async def enable_user(
     account_id: str = Depends(get_account_id),
     svc: UserService = Depends(get_user_service)
 ):
-    svc.enable(user_id, account_id)
+    try:
+        svc.enable(user_id, account_id)
+    except UserNotFound:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
     return {"enabled_user_id": user_id}
 
 @router.put("/{user_id}/disable", dependencies=[Depends(PermissionChecker(required_permissions=['admin']))])
@@ -139,7 +156,10 @@ async def disable_user(
     account_id: str = Depends(get_account_id),
     svc: UserService = Depends(get_user_service)
 ):
-    svc.disable(user_id, account_id)
+    try:
+        svc.disable(user_id, account_id)
+    except UserNotFound:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
     return {"disabled_user_id": user_id}
 
 @router.get("/{user_id}/tour-preferences", dependencies=[Depends(PermissionChecker(required_permissions=['admin', 'user']))])

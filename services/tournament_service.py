@@ -110,6 +110,34 @@ class TournamentService:
             return self._resolve_logo(item)
         return None
 
+    def _champion(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        """The team that won the bracket final of a finished tournament, or None.
+
+        Leagues have no bracket, so they have no champion here. One team read per
+        finished tournament, only for tournaments that have a final winner."""
+        if item.get("status") != "finished" or not self.team_repo:
+            return None
+        final = (item.get("bracket") or {}).get("final") or []
+        winner_id = final[0].get("winner_team_id") if final else None
+        if not winner_id:
+            return None
+        team = self.team_repo.get(winner_id)
+        # The winner must be a team of this tournament.
+        if not team or team.get("tournament_id") != item.get("id"):
+            return None
+        champion = {
+            "team_id": winner_id,
+            "name": team.get("name", ""),
+            "short_name": team.get("short_name", ""),
+            "logo_url": team.get("logo_url", ""),
+        }
+        key = champion["logo_url"]
+        if key and self.s3 and not key.startswith("http"):
+            champion["logo_url"] = self.s3.presign_get_from_explicit_key(
+                key=key, content_type="image/png"
+            )
+        return champion
+
     def list_public_tournaments(self, status: str | None = None) -> dict[str, Any]:
         all_items = self.repo.list_public()
         counts: dict[str, int] = {}
@@ -117,7 +145,12 @@ class TournamentService:
             s = item.get("status", "")
             counts[s] = counts.get(s, 0) + 1
         items = [i for i in all_items if i.get("status") == status] if status else all_items
-        return {"items": [self._resolve_logo(i) for i in items], "counts_by_status": counts}
+        resolved = [self._resolve_logo(i) for i in items]
+        for i in resolved:
+            champion = self._champion(i)
+            if champion:
+                i["champion"] = champion
+        return {"items": resolved, "counts_by_status": counts}
 
     def list_tournaments(self, account_id: str, status: str | None = None) -> dict[str, Any]:
         all_items = self.repo.list_by_account(account_id)
