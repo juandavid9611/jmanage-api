@@ -138,6 +138,10 @@ class TournamentService:
             )
         return champion
 
+    def public_champion(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        """Champion of a finished tournament, same logic as the public list."""
+        return self._champion(item)
+
     def list_public_tournaments(self, status: str | None = None) -> dict[str, Any]:
         all_items = self.repo.list_public()
         counts: dict[str, int] = {}

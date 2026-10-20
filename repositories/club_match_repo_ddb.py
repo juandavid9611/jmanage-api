@@ -1,6 +1,7 @@
 from typing import Any
 
 from boto3.dynamodb.conditions import Attr, Key
+from botocore.exceptions import ClientError
 
 from .ddb_session import club_match_table
 
@@ -58,6 +59,30 @@ class ClubMatchRepo:
             ExpressionAttributeValues={f":{k}": v for k, v in updates.items()},
             ConditionExpression=Attr("account_id").eq(account_id),
         )
+
+    def set_lineup_entry_field(
+        self, match_id: str, account_id: str, index: int, roster_entry_id: str, field: str, value: Any
+    ) -> bool:
+        """Atomically set one field of one lineup entry, without rewriting the rest of the lineup.
+
+        Guarded on the entry still sitting at `index` for `roster_entry_id`, so a concurrent lineup
+        save that reordered entries makes this return False instead of writing to the wrong player.
+        """
+        index = int(index)
+        try:
+            self._table.update_item(
+                Key={"id": match_id},
+                UpdateExpression=f"SET #lineup.#entries[{index}].#field = :value",
+                ExpressionAttributeNames={"#lineup": "lineup", "#entries": "entries", "#field": field},
+                ExpressionAttributeValues={":value": value},
+                ConditionExpression=Attr("account_id").eq(account_id)
+                & Attr(f"lineup.entries[{index}].roster_entry_id").eq(roster_entry_id),
+            )
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
 
     def delete(self, match_id: str, account_id: str) -> None:
         self._table.delete_item(

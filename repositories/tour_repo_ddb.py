@@ -50,6 +50,29 @@ class TourRepo:
                 FilterExpression=Attr("account_id").eq(account_id)
             )
 
+    def list_for_public_overview(self, account_id: str, max_items: int = 5000) -> list[dict[str, Any]]:
+        """Paginated account-index query of match/training tours, projecting only the
+        attributes the public club overview aggregates. Stops at `max_items`."""
+        from boto3.dynamodb.conditions import Key
+        kwargs: dict[str, Any] = {
+            "IndexName": self._account_gsi,
+            "KeyConditionExpression": Key("account_id").eq(account_id),
+            "FilterExpression": Attr("event_type").is_in(["match", "training"]),
+            "ProjectionExpression": "#id, #et, #tn, #sc, #bk, #av",
+            "ExpressionAttributeNames": {
+                "#id": "id", "#et": "event_type", "#tn": "tour_name",
+                "#sc": "scores", "#bk": "bookers", "#av": "available",
+            },
+        }
+        items: list[dict[str, Any]] = []
+        while len(items) < max_items:
+            resp = self._table.query(**kwargs)
+            items.extend(resp.get("Items", []))
+            if not resp.get("LastEvaluatedKey"):
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        return items[:max_items]
+
     def list_filtered(self, account_id: str, group: str | None = None, tour_type: str | None = None) -> Iterable[dict[str, Any]]:
         """List tours with optional filters within the specified account"""
         filter_expr = Attr("account_id").eq(account_id)

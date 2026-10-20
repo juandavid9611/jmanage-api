@@ -7,6 +7,8 @@ class AccountSettings(BaseModel):
     language: str | None = "es"
     currency: str | None = "COP"
     account_type: str | None = "club"  # "club" (full feature set) or "tournament" (torneos-only nav)
+    # Opt-in for the unauthenticated GET /public/clubs/{id}/overview (3D club world). Off unless true.
+    public_world_enabled: bool | None = None
 
 
 class AccountSubscription(BaseModel):

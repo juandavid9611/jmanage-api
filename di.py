@@ -52,6 +52,7 @@ from repositories.club_tournament_repo_ddb import ClubTournamentRepo
 from repositories.club_roster_repo_ddb import ClubRosterRepo
 from repositories.club_match_repo_ddb import ClubMatchRepo
 from services.club_tournament_service import ClubTournamentService
+from services.public_club_service import PublicClubService
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -285,3 +286,22 @@ def get_club_tournament_service() -> ClubTournamentService:
         ClubMatchRepo(),
         calendar_repo=CalendarRepo(),
     )
+
+
+_public_club_service: PublicClubService | None = None
+
+
+def get_public_club_service() -> PublicClubService:
+    """Process-wide singleton so its short in-memory cache survives across warm Lambda invocations."""
+    global _public_club_service
+    if _public_club_service is None:
+        _public_club_service = PublicClubService(
+            account_repo=AccountRepo(),
+            membership_repo=MembershipRepo(),
+            workspace_repo=WorkspaceRepo(),
+            tour_repo=TourRepo(),
+            tournament_repo=TournamentRepo(),
+            tournament_service=get_tournament_service(),
+            s3=S3Adapter(),
+        )
+    return _public_club_service
