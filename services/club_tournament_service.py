@@ -3,6 +3,7 @@ from typing import Any
 from uuid import uuid4
 
 from api.schemas.club_tournaments import (
+    LineupEntryStatPatch,
     LineupIn,
     MatchIn,
     RosterBulkIn,
@@ -16,6 +17,13 @@ from repositories.club_roster_repo_ddb import ClubRosterRepo
 from repositories.club_tournament_repo_ddb import ClubTournamentRepo
 
 LINEUP_STATUSES = ("titular", "suplente", "")
+
+# Per-player match stats on a lineup entry, same six fields as tour.bookers. Keys are the wire
+# (camelCase) names used by the PATCH body; values are the snake_case names stored on the entry.
+LINEUP_STAT_COUNTERS = {"goals": "goals", "assists": "assists"}
+LINEUP_STAT_FLAGS = {"mvp": "mvp", "late": "late", "yellowCard": "yellow_card", "redCard": "red_card"}
+LINEUP_STAT_KEYS = (*LINEUP_STAT_COUNTERS.values(), *LINEUP_STAT_FLAGS.values())
+MAX_STAT_COUNT = 99
 
 
 def normalize_roster_identity(user_id: str | None, guest_name: str | None) -> tuple[str | None, str | None]:
@@ -37,8 +45,35 @@ def validate_match_date(value: str) -> str:
     return value
 
 
-def validate_lineup(entries: list[dict[str, Any]], roster_ids: set[str]) -> list[dict[str, Any]]:
-    """Check lineup entries against the tournament roster and return them normalized."""
+def parse_lineup_stat(name: str, value: str) -> tuple[str, int | bool]:
+    """Validate one stat patch. Returns the stored key and the parsed value."""
+    if name in LINEUP_STAT_COUNTERS:
+        try:
+            count = int(str(value).strip())
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid integer value for {name}: {value}")
+        if not 0 <= count <= MAX_STAT_COUNT:
+            raise ValueError(f"{name} must be between 0 and {MAX_STAT_COUNT}")
+        return LINEUP_STAT_COUNTERS[name], count
+    if name in LINEUP_STAT_FLAGS:
+        flag = str(value).strip().lower()
+        if flag not in ("true", "false"):
+            raise ValueError(f"Invalid boolean value for {name}: {value}")
+        return LINEUP_STAT_FLAGS[name], flag == "true"
+    raise ValueError(f"Property {name} not found")
+
+
+def validate_lineup(
+    entries: list[dict[str, Any]],
+    roster_ids: set[str],
+    existing_entries: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Check lineup entries against the tournament roster and return them normalized.
+
+    A lineup save never writes stats: it carries over whatever the previous lineup already stored
+    for the same roster entry, so the call-up editor can't wipe or overwrite goals/cards.
+    """
+    previous = {e["roster_entry_id"]: e for e in existing_entries or []}
     seen: set[str] = set()
     out = []
     for e in entries:
@@ -51,12 +86,14 @@ def validate_lineup(entries: list[dict[str, Any]], roster_ids: set[str]) -> list
         status = e.get("status") or ""
         if status not in LINEUP_STATUSES:
             raise ValueError(f"Invalid lineup status '{status}'")
-        out.append({
+        entry = {
             "roster_entry_id": rid,
             "called_up": bool(e["called_up"]),
             "status": status,
             "minutes": int(e.get("minutes") or 0),
-        })
+        }
+        entry.update({k: previous[rid][k] for k in LINEUP_STAT_KEYS if rid in previous and k in previous[rid]})
+        out.append(entry)
     return out
 
 
@@ -258,14 +295,38 @@ class ClubTournamentService:
     def save_lineup(
         self, tournament_id: str, match_id: str, workspace_id: str, account_id: str, body: LineupIn
     ) -> dict[str, Any] | None:
-        if not self._match(tournament_id, match_id, workspace_id, account_id):
+        match = self._match(tournament_id, match_id, workspace_id, account_id)
+        if not match:
             return None
         roster_ids = {r["id"] for r in self.roster_repo.list_by_tournament(tournament_id, account_id)}
-        entries = validate_lineup([e.model_dump() for e in body.entries], roster_ids)
+        previous = (match.get("lineup") or {}).get("entries", [])
+        entries = validate_lineup([e.model_dump() for e in body.entries], roster_ids, previous)
         now = _now()
         self.match_repo.update(
             match_id, account_id, {"lineup": {"entries": entries, "saved_at": now}, "updated_at": now}
         )
+        return self._map_match(self.match_repo.get(match_id, account_id))
+
+    def patch_lineup_entry_stat(
+        self,
+        tournament_id: str,
+        match_id: str,
+        roster_entry_id: str,
+        workspace_id: str,
+        account_id: str,
+        body: LineupEntryStatPatch,
+    ) -> dict[str, Any] | None:
+        """Set one stat on a called-up player's lineup entry; returns the updated match."""
+        match = self._match(tournament_id, match_id, workspace_id, account_id)
+        if not match:
+            return None
+        entries = (match.get("lineup") or {}).get("entries", [])
+        index = next((i for i, e in enumerate(entries) if e["roster_entry_id"] == roster_entry_id), None)
+        if index is None or not entries[index].get("called_up"):
+            raise ValueError("Player is not called up in this match")
+        field, value = parse_lineup_stat(body.name, body.value)
+        if not self.match_repo.set_lineup_entry_field(match_id, account_id, index, roster_entry_id, field, value):
+            raise ValueError("The lineup changed while saving, please retry")
         return self._map_match(self.match_repo.get(match_id, account_id))
 
     # ── Internals ────────────────────────────────────────────────────
@@ -368,6 +429,12 @@ class ClubTournamentService:
                         "calledUp": e["called_up"],
                         "status": e.get("status", ""),
                         "minutes": e.get("minutes", 0),
+                        "goals": e.get("goals", 0),
+                        "assists": e.get("assists", 0),
+                        "mvp": e.get("mvp", False),
+                        "late": e.get("late", False),
+                        "yellowCard": e.get("yellow_card", False),
+                        "redCard": e.get("red_card", False),
                     }
                     for e in lineup["entries"]
                 ],

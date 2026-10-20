@@ -50,3 +50,9 @@ class LineupEntryIn(CamelModel):
 
 class LineupIn(CamelModel):
     entries: list[LineupEntryIn] = Field(max_length=100)
+
+
+class LineupEntryStatPatch(BaseModel):
+    """Single-field stat patch, same shape as PatchProperty for tour bookers."""
+    name: str    # goals | assists | mvp | late | yellowCard | redCard
+    value: str   # "3" for counters, "true"/"false" for flags

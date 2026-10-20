@@ -12,6 +12,7 @@ from auth import (
     get_current_user,
 )
 from api.schemas.club_tournaments import (
+    LineupEntryStatPatch,
     LineupIn,
     MatchIn,
     RosterBulkIn,
@@ -226,3 +227,20 @@ async def save_lineup(
     svc: ClubTournamentService = Depends(get_club_tournament_service),
 ):
     return _run(lambda: svc.save_lineup(tournament_id, match_id, workspace_id, account_id, body), "Match")
+
+
+@router.patch("/{tournament_id}/matches/{match_id}/lineup/{roster_entry_id}", dependencies=[Depends(MANAGERS)])
+async def patch_lineup_entry_stat(
+    tournament_id: str,
+    match_id: str,
+    roster_entry_id: str,
+    body: LineupEntryStatPatch,
+    workspace_id: str = Query(...),
+    account_id: str = Depends(get_account_id),
+    svc: ClubTournamentService = Depends(get_club_tournament_service),
+):
+    """Set one stat (goals, assists, mvp, late, yellowCard, redCard) of a called-up player. Returns the match."""
+    return _run(
+        lambda: svc.patch_lineup_entry_stat(tournament_id, match_id, roster_entry_id, workspace_id, account_id, body),
+        "Match",
+    )
