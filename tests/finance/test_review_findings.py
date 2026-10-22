@@ -201,7 +201,6 @@ def test_f8_payee_cannot_overwrite_receipts_of_a_request_under_review_or_paid(fi
 
 
 # --------------------------------------------------------------------------- F9
-@pytest.mark.xfail(strict=True, reason="F9 fixed in the following commit")
 def test_f9_put_guard_uses_the_strongly_consistent_paid_amount_not_only_the_gsi(finance_db):
     """`_has_approved_submission` reads a GSI (eventually consistent). Right after an approval it may still
     return nothing; the PUT must then still refuse to move a request with approved money out of partial."""

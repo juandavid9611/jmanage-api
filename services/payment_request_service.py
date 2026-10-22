@@ -225,7 +225,8 @@ class PaymentRequestService:
             if cur_status == "approval_pending" and self._has_pending_review(payment_request_id, account_id):
                 raise _http(409, "A submission is under review: approve or reject it first.")
             if cur_status in ("paid", "partial") and new_status not in ("paid", "partial"):
-                if self._has_approved_submission(payment_request_id, account_id):
+                stored_paid = raw.get("paid_amount")  # strongly consistent; the submissions GSI may lag
+                if (stored_paid is not None and _dec(stored_paid) > 0) or self._has_approved_submission(payment_request_id, account_id):
                     raise _http(409, "This request has approved payments: it cannot leave the paid/partial states.")
                 updates["paid_amount"] = Decimal("0")  # legacy paid row reverted as before
             if new_status == "paid" and cur_status != "paid":
