@@ -40,6 +40,15 @@ def _dec(value) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
+def _table_missing(exc: Exception) -> bool:
+    """True when the error means the DynamoDB table itself is missing/unconfigured (not throttling, not a bug)."""
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict) and response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+        return True  # the table does not exist (yet)
+    # `dynamodb.Table(None)`: the env var with the table name is not set
+    return isinstance(exc, ValueError) and "Required parameter name not set" in str(exc)
+
+
 def _status_of(item: dict[str, Any], key: str = "payment_status") -> str | None:
     value = item.get(key)
     return getattr(value, "value", value)
@@ -130,6 +139,8 @@ class PaymentRequestService:
         all_subs = stored + ([legacy] if legacy else [])
         is_admin = viewer_is_admin or self._is_workspace_admin(viewer_id, account_id, raw.get("user_group"))
         is_payee = bool(viewer_id) and viewer_id == raw.get("user_id")
+        if not (is_admin or is_payee):
+            return None  # same rule as the list (non-admins only see their own); 404, never confirm it exists
         item = self._map_payment_request(raw)
         item["submissions"] = [self._map_submission(s) for s in all_subs] if (is_admin or is_payee) else []
         return item
@@ -203,6 +214,10 @@ class PaymentRequestService:
         new_total = updates.get("user_price", old_total)
         if new_total < paid:
             raise _http(409, f"totalAmount cannot be lower than the amount already paid ({plain_number(paid)}).")
+        if cur_status == "paid" and new_total > paid and (new_status is None or new_status == "paid"):
+            # A paid request must keep paid == total: raising the price would silently leave it 'paid' with a
+            # balance nobody can collect. Revert it first (allowed while no approved payment is tracked).
+            raise _http(409, "Cannot raise the total of a paid request; reopen it first.")
         if "user_price" in updates and updates["user_price"] != old_total:
             original = raw.get("original_amount")
             if original is None or _dec(original) == old_total:
@@ -597,7 +612,16 @@ class PaymentRequestService:
     def _stored_submissions(self, payment_request_id: str, account_id: str) -> list[dict[str, Any]]:
         if self.submissions is None:
             return []
-        return self.submissions.list_by_payment_request(payment_request_id, account_id)
+        try:
+            return self.submissions.list_by_payment_request(payment_request_id, account_id)
+        except Exception as exc:  # noqa: BLE001
+            if not _table_missing(exc):
+                raise
+            # Deploy skew: the API shipped before the PaymentSubmission table (infra). With no table there
+            # cannot be any submission, which is exactly the behaviour before this feature, so the existing
+            # screens keep working. Writes (submit/review) still hit the table and fail loudly.
+            logger.error("PaymentSubmission table is not available; treating the request as having no submissions")
+            return []
 
     def _has_pending_review(self, payment_request_id: str, account_id: str) -> bool:
         return any(s.get("status") == "pending_review" for s in self._stored_submissions(payment_request_id, account_id))
@@ -607,12 +631,18 @@ class PaymentRequestService:
 
     def _locked_keys(self, payment_request_id: str, account_id: str) -> set[str]:
         """Receipts of payments in review or approved: they must never be overwritten."""
-        return {
+        locked = {
             key
             for s in self._stored_submissions(payment_request_id, account_id)
             if s.get("status") != "rejected"
             for key in (s.get("images") or [])
         }
+        # Legacy flow: the receipt lives on the request itself (no submission row) while it waits for the
+        # admin or after it was marked paid.
+        raw = self.repo.get(payment_request_id, account_id)
+        if raw and _status_of(raw) in ("approval_pending", "paid"):
+            locked.update(key for key in (raw.get("images") or []) if isinstance(key, str))
+        return locked
 
     def _is_workspace_admin(self, user_id: str | None, account_id: str, workspace_id: str | None) -> bool:
         if not (self.membership and user_id and workspace_id):

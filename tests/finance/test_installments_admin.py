@@ -51,9 +51,10 @@ def test_detail_submissions_visibility(finance_db):
     submit(svc, amount="1000")
     as_admin = svc.get_detail("pr1", ACC, viewer_id=ADMIN, viewer_is_admin=False)  # workspace admin via membership
     as_payee = svc.get_detail("pr1", ACC, viewer_id=PAYEE)
-    as_other = svc.get_detail("pr1", ACC, viewer_id="stranger")
     assert len(as_admin["submissions"]) == 1 and len(as_payee["submissions"]) == 1
-    assert as_other["submissions"] == [] and as_other["id"] == "pr1"
+    # a member who is neither the payee nor an admin does not even learn that it exists (404, F7)
+    assert svc.get_detail("pr1", ACC, viewer_id="stranger") is None
+    assert svc.get_detail("pr1", ACC, viewer_id=None) is None
     sub = as_payee["submissions"][0]
     assert set(sub) >= {"id", "amount", "accountId", "fileNames", "status", "submittedAt", "images", "source"}
     assert sub["fileNames"] == ["r1.png"] and sub["images"][0].startswith("https://")

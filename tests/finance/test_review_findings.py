@@ -182,7 +182,6 @@ def test_f6_huge_amounts_are_a_validation_error_not_a_500(value):
 
 
 # --------------------------------------------------------------------------- F7
-@pytest.mark.xfail(strict=True, reason="F7 pre-existing: GET /payment_requests/:id lets any account member read anyone's request")
 def test_f7_another_member_cannot_read_someones_payment_request(api):  # noqa: F811
     put_pr("pr1", total="100000", images=["dev/accounts/acc1/users/user_payee/invoices/pr1/a.png"])
     api.state["user"] = "other"  # same account, plain member, not the payee, not an admin
@@ -190,7 +189,6 @@ def test_f7_another_member_cannot_read_someones_payment_request(api):  # noqa: F
 
 
 # --------------------------------------------------------------------------- F8
-@pytest.mark.xfail(strict=True, reason="F8 legacy receipts (no submission row) can be overwritten by the payee")
 def test_f8_payee_cannot_overwrite_receipts_of_a_request_under_review_or_paid(finance_db):
     from api.schemas.files import FileSpec
 
@@ -214,7 +212,6 @@ def test_f9_put_guard_uses_the_strongly_consistent_paid_amount_not_only_the_gsi(
 
 
 # --------------------------------------------------------------------------- F10
-@pytest.mark.xfail(strict=True, reason="F10 raising the price of a paid request leaves status=paid with paid_amount < total (design decision)")
 def test_f10_raising_the_price_of_a_paid_request_keeps_paid_equal_to_total(finance_db):
     put_pr("pr1", status="paid", total="100000", paid="100000")
     svc = make_service()
@@ -226,3 +223,27 @@ def test_f10_raising_the_price_of_a_paid_request_keeps_paid_equal_to_total(finan
         return
     raw = get_pr("pr1")
     assert raw["payment_status"] != "paid" or raw["paid_amount"] >= raw["user_price"]
+
+
+# --------------------------------------------------------------------------- deploy skew
+def test_reads_survive_the_api_shipping_before_the_submissions_table(finance_db, monkeypatch):
+    """The API deploys on push, the tables come from the infra deploy. If the API goes first,
+    GET detail / presign / PUT guards must behave as before this feature (no submissions)."""
+    put_pr("pr1", total="100000", images=[])
+    svc = make_service()
+    # the table does not exist at all (ResourceNotFoundException) ...
+    finance_db.meta.client.delete_table(TableName="test-PaymentSubmission")
+    detail = svc.get_detail("pr1", ACC, viewer_id=PAYEE)
+    assert detail["id"] == "pr1" and detail["submissions"] == []
+    # ... or its env var is not configured at all
+    monkeypatch.delenv("PAYMENT_SUBMISSION_TABLE_NAME")
+    svc2 = make_service()
+    assert svc2.get_detail("pr1", ACC, viewer_id=PAYEE)["submissions"] == []
+
+
+def test_money_writes_still_fail_loudly_without_the_submissions_table(finance_db):
+    put_pr("pr1", total="100000", allow=True, max_installments=3)
+    svc = make_service()
+    finance_db.meta.client.delete_table(TableName="test-PaymentSubmission")
+    with pytest.raises(Exception):  # not swallowed: a payment must never be recorded half-way
+        submit(svc, amount="1000")
