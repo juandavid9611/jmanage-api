@@ -28,6 +28,8 @@ def parse_money(value: Any, *, allow_zero: bool = False, allow_negative: bool = 
         raise MoneyError("amount must be a number") from None
     if not amount.is_finite():
         raise MoneyError("amount must be finite")
+    if abs(amount) > MAX_AMOUNT:  # checked first: quantize() raises InvalidOperation on huge values
+        raise MoneyError("amount is too large")
     if amount != amount.quantize(_TWO_PLACES):
         raise MoneyError("amount can have at most 2 decimals")
     amount = amount.quantize(_TWO_PLACES)

@@ -173,7 +173,6 @@ def test_f5_scheduler_service_needs_no_order_or_finance_tables(finance_db, monke
 
 
 # --------------------------------------------------------------------------- F6
-@pytest.mark.xfail(strict=True, reason="F6 fixed in the following commit")
 @pytest.mark.parametrize("value", [10**30, "1e400", "9" * 40, Decimal("1E+30")])
 def test_f6_huge_amounts_are_a_validation_error_not_a_500(value):
     from core.finance_money import MoneyError, parse_money
