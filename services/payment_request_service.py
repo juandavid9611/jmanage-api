@@ -730,6 +730,8 @@ class PaymentRequestService:
         current = current.value if hasattr(current, "value") else current
         if current not in open_states:
             return False
+        if _paid_of(item) > 0:
+            return False  # approved payments are tracked money (adjustments): never cancel it automatically
         self.repo.update(payment_request_id, account_id, {"payment_status": PaymentRequestStatus.CANCELED})
         return True
 

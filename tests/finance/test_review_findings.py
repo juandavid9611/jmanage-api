@@ -48,7 +48,6 @@ def test_f1_stale_concurrent_expense_payments_never_leave_a_fully_paid_expense_a
 
 
 # --------------------------------------------------------------------------- F2
-@pytest.mark.xfail(strict=True, reason="F2 fixed in the following commit")
 @pytest.mark.parametrize("status,paid", [("overdue", "40000"), ("approval_pending", "40000")])
 def test_f2_cancel_for_order_never_cancels_a_request_with_approved_payments(finance_db, status, paid):
     put_pr("pr1", status=status, total="100000", paid=paid, order_id="ord1")
