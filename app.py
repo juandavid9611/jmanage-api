@@ -22,6 +22,8 @@ from api.notifications import router as notifications_router
 from api.public_tournaments import router as public_tournaments_router
 from api.public_clubs import router as public_clubs_router
 from api.votations import router as votations_router
+from api.bank_accounts import router as bank_accounts_router
+from api.expenses import router as expenses_router
 from api.invitations import router as invitations_router
 from api.public_invitations import router as public_invitations_router
 from api.admin_invitations import router as admin_invitations_router
@@ -81,6 +83,8 @@ def create_app() -> FastAPI:
     app.include_router(donations_router)
     app.include_router(training_sessions_router)
     app.include_router(club_tournaments_router)
+    app.include_router(bank_accounts_router)
+    app.include_router(expenses_router)
     # locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
     return app
 
