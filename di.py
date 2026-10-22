@@ -120,7 +120,7 @@ def get_payment_request_service() -> PaymentRequestService:
         PaymentRequestsRepo(),
         S3Adapter(),
         get_notification_orchestator(),
-        order_repo=OrderRepo(),
+        order_repo=_Lazy(OrderRepo),
         submissions=PaymentSubmissionRepo(),
         adjustments=_Lazy(_bank_adjustment_repo),
         bank_accounts=_Lazy(_bank_account_repo),

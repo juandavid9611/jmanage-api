@@ -95,7 +95,6 @@ def test_f4_one_failing_account_notification_does_not_abort_the_batch(finance_db
 
 
 # --------------------------------------------------------------------------- verified-solid probes
-@pytest.mark.xfail(strict=True, reason="F5 fixed in the following commit")
 def test_f5b_scheduler_handler_runs_with_only_its_own_env(finance_db, monkeypatch):
     import scheduled_handler
 
@@ -156,7 +155,6 @@ def test_old_frontend_flow_request_approval_then_put_paid(finance_db):
 
 
 # --------------------------------------------------------------------------- F5
-@pytest.mark.xfail(strict=True, reason="F5 fixed in the following commit")
 def test_f5_scheduler_service_needs_no_order_or_finance_tables(finance_db, monkeypatch):
     """The PaymentScheduler lambda has no ORDER/PRODUCT/BANK_ACCOUNT/EXPENSE/BUDGET table env vars:
     building the service must not touch them (OrderRepo() used to raise at construction)."""
