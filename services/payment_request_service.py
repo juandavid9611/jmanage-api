@@ -768,12 +768,15 @@ class PaymentRequestService:
                 if entry:
                     account_overdue_payments.append(entry)
             overdue_payments.extend(account_overdue_payments)
-            self.notifier.overdue_payments_processed(
-                account_id=account_id,
-                user_name=self._payments_username,
-                pending_count=len(open_items),
-                overdue_payments=account_overdue_payments,
-            )
+            try:
+                self.notifier.overdue_payments_processed(
+                    account_id=account_id,
+                    user_name=self._payments_username,
+                    pending_count=len(open_items),
+                    overdue_payments=account_overdue_payments,
+                )
+            except Exception:
+                logger.exception("overdue notification failed for account %s", account_id)  # never abort the batch
         return overdue_payments
 
     def _mark_overdue(self, item: dict[str, Any], account_id: str) -> dict[str, Any] | None:

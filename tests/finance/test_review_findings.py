@@ -77,7 +77,6 @@ def test_f3b_can_still_delete_an_untouched_request(finance_db):
 
 
 # --------------------------------------------------------------------------- F4
-@pytest.mark.xfail(strict=True, reason="F4 fixed in the following commit")
 def test_f4_one_failing_account_notification_does_not_abort_the_batch(finance_db):
     put_pr("a1", account="accA", due=PAST, created_time=1)
     put_pr("b1", account="accB", due=PAST, created_time=2)
