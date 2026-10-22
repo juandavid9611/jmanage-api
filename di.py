@@ -329,9 +329,6 @@ def get_bank_account_service() -> BankAccountService:
 
 
 def get_expense_service() -> ExpenseService:
-    # Lazy import: the budget repo lives in the budget module (another branch), keep this one importable alone.
-    from repositories.budget_item_repo_ddb import BudgetItemRepo
-
     return ExpenseService(
         expenses=ExpenseRepo(),
         payments=ExpensePaymentRepo(),
