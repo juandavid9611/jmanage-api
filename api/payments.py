@@ -2,7 +2,14 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel
 
-from auth import PermissionChecker, WorkspacePermissionChecker, get_account_id, get_current_user, get_account_role
+from auth import (
+    PermissionChecker,
+    WorkspacePermissionChecker,
+    get_account_id,
+    get_account_role,
+    get_current_user,
+    get_workspace_role,
+)
 from api.schemas.files import FileSpec
 from di import (
     get_account_service,
@@ -15,7 +22,7 @@ from di import (
     get_user_service,
 )
 from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query
-from api.schemas.payments import BulkPutPaymentRequest
+from api.schemas.payments import BulkPutPaymentRequest, ReviewPaymentRequest, SubmitPaymentRequest
 from services.account_service import AccountService
 from services.payment_request_service import PaymentRequestService
 from services.tournament_match_event_service import TournamentMatchEventService
@@ -74,9 +81,13 @@ async def create_payment_requests(
 async def get_payment_request(
     payment_request_id: str,
     account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
+    role: str = Depends(get_account_role),
     svc: PaymentRequestService = Depends(get_payment_request_service)
 ):
-    item = svc.get(payment_request_id, account_id)
+    item = svc.get_detail(
+        payment_request_id, account_id, viewer_id=current_user.get("sub"), viewer_is_admin=(role == "admin")
+    )
     if not item:
         raise HTTPException(status_code=404, detail=f"Payment Request {payment_request_id} not found")
     return item
@@ -91,6 +102,7 @@ async def update_payment_request(
     put_payment_request: BulkPutPaymentRequest,
     workspace_id: str = Query(..., description="Workspace ID that owns this payment request"),
     account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
     svc: PaymentRequestService = Depends(get_payment_request_service)
 ):
     """Update payment request (requires workspace admin permission)"""
@@ -106,7 +118,7 @@ async def update_payment_request(
             detail=f"Payment request does not belong to workspace {workspace_id}"
         )
     
-    svc.update(payment_request_id, account_id, put_payment_request)
+    svc.update(payment_request_id, account_id, put_payment_request, updated_by=current_user.get("sub"))
     return {"updated_payment_request_id": payment_request_id}
 
 @router.delete(
@@ -144,9 +156,11 @@ async def generate_payment_request_presigned_urls(
     files: list[FileSpec] = Body(..., embed=False),
     workspace_id: str = Query(..., description="Workspace ID that owns this payment request"),
     account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
+    workspace_role: str | None = Depends(get_workspace_role),
     svc: PaymentRequestService = Depends(get_payment_request_service)
 ):
-    """Generate presigned URLs for payment request (requires workspace membership)"""
+    """Generate presigned URLs for payment request (the payee or a workspace admin)"""
     # Fetch and verify payment request exists
     payment_request = svc.get(payment_request_id, account_id)
     if not payment_request:
@@ -159,8 +173,13 @@ async def generate_payment_request_presigned_urls(
             detail=f"Payment request does not belong to workspace {workspace_id}"
         )
 
+    if workspace_role != "admin" and payment_request.get("userId") != current_user.get("sub"):
+        raise HTTPException(status_code=403, detail="Only the person charged or a workspace admin can upload receipts.")
+
     try:
         result = svc.generate_put_presigned_urls(payment_request_id=payment_request_id, account_id=account_id, files=files)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Error generating presigned URLs: {str(e)}")
 
@@ -168,35 +187,89 @@ async def generate_payment_request_presigned_urls(
 
 @router.post(
     "/{payment_request_id}/request_approval",
-    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin', 'team_owner']))]
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin', 'team_owner']))],
+    deprecated=True,
 )
 async def request_payment_request_approval(
     payment_request_id: str,
     file_names: list[str] = Body(..., embed=False),
     workspace_id: str = Query(..., description="Workspace ID that owns this payment request"),
     account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
     svc: PaymentRequestService = Depends(get_payment_request_service)
 ):
-    """Request payment approval (requires workspace membership)"""
-    # Fetch and verify payment request exists
+    """Deprecated alias of submit_payment for the full remaining balance (the payee only)."""
     payment_request = svc.get(payment_request_id, account_id)
     if not payment_request:
         raise HTTPException(status_code=404, detail=f"Payment Request {payment_request_id} not found")
-    
+
     # Verify payment request belongs to workspace
     if payment_request.get("group") != workspace_id:
         raise HTTPException(
             status_code=400,
             detail=f"Payment request does not belong to workspace {workspace_id}"
         )
-    
-    user = payment_request["paymentRequestTo"]
-    if payment_request["status"] != "pending" and payment_request["status"] != "overdue":
-        raise HTTPException(status_code=400, detail=f"Payment Request {payment_request_id} is not in pending or overdue status")
-    if not file_names:
-        raise HTTPException(status_code=400, detail="No files were uploaded")
-    
-    return {"requested_payment_request_approval_id": svc.request_payment_request_approval(payment_request_id, account_id, file_names)}
+
+    return {
+        "requested_payment_request_approval_id": svc.request_payment_request_approval(
+            payment_request_id, account_id, file_names, user_id=current_user.get("sub")
+        )
+    }
+
+
+def _get_in_workspace(svc: PaymentRequestService, payment_request_id: str, account_id: str, workspace_id: str) -> dict:
+    payment_request = svc.get(payment_request_id, account_id)
+    if not payment_request or payment_request.get("group") != workspace_id:
+        raise HTTPException(status_code=404, detail=f"Payment Request {payment_request_id} not found")
+    return payment_request
+
+
+@router.post(
+    "/{payment_request_id}/submit_payment",
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['user', 'admin', 'team_owner']))]
+)
+async def submit_payment(
+    payment_request_id: str,
+    body: SubmitPaymentRequest,
+    workspace_id: str = Query(..., description="Workspace ID that owns this payment request"),
+    account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
+    svc: PaymentRequestService = Depends(get_payment_request_service)
+):
+    """The person charged sends a payment (a full one or an installment) with its receipts for review."""
+    _get_in_workspace(svc, payment_request_id, account_id, workspace_id)
+    return svc.submit_payment(
+        payment_request_id,
+        account_id,
+        user_id=current_user.get("sub"),
+        amount=body.amount,
+        file_names=body.fileNames,
+        bank_account_id=body.accountId,
+    )
+
+
+@router.post(
+    "/{payment_request_id}/review_payment",
+    dependencies=[Depends(WorkspacePermissionChecker(required_permissions=['admin']))]
+)
+async def review_payment(
+    payment_request_id: str,
+    body: ReviewPaymentRequest,
+    workspace_id: str = Query(..., description="Workspace ID that owns this payment request"),
+    account_id: str = Depends(get_account_id),
+    current_user: dict = Depends(get_current_user),
+    svc: PaymentRequestService = Depends(get_payment_request_service)
+):
+    """Approve or reject a submission (workspace admin). Idempotent for the same decision."""
+    _get_in_workspace(svc, payment_request_id, account_id, workspace_id)
+    return svc.review_payment(
+        payment_request_id,
+        account_id,
+        reviewer_id=current_user.get("sub"),
+        submission_id=body.submissionId,
+        approve=body.approve,
+        bank_account_id=body.accountId,
+    )
 
 
 _CARD_YELLOW_TYPES = {"yellow_card"}
