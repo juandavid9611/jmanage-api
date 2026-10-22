@@ -19,9 +19,10 @@ class FakePRRepo:
         i = self.items.get(pid)
         return i if i and i["account_id"] == account_id else None
 
-    def update(self, pid, account_id, updates):
+    def update(self, pid, account_id, updates, expected_status=None, remove=()):
         self.updates.append((pid, updates))
         self.items[pid].update(updates)
+        return True
 
 
 class FakeNotifier:

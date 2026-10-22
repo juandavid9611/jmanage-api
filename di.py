@@ -12,6 +12,7 @@ from repositories.calendar_repo_ddb import CalendarRepo
 from services.notification_orchestator import Notifications
 from services.payment_request_service import PaymentRequestService
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
+from repositories.payment_submission_repo_ddb import PaymentSubmissionRepo
 from repositories.notifications.onesignal_impl import OneSignalNotificationSender
 from repositories.notifications.courier_email_impl import CourierNotificationSender
 from repositories.notification_repo_ddb import NotificationRepo
@@ -79,12 +80,41 @@ def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
         boto3.client("cognito-idp"), os.environ.get("USER_POOL_ID"), os.environ.get("USER_POOL_API_CLIENT_ID")
     )
 
+class _Lazy:
+    """Builds the wrapped collaborator on first use, so a lambda that never reaches the money flows
+    (e.g. the overdue scheduler) does not need their tables/env vars nor their modules at import time."""
+
+    def __init__(self, factory):
+        self._factory = factory
+        self._obj = None
+
+    def __getattr__(self, name):
+        if self._obj is None:
+            self._obj = self._factory()
+        return getattr(self._obj, name)
+
+
+def _bank_account_repo():
+    from repositories.bank_account_repo_ddb import BankAccountRepo
+    return BankAccountRepo()
+
+
+def _bank_adjustment_repo():
+    from repositories.bank_adjustment_repo_ddb import BankAdjustmentRepo
+    return BankAdjustmentRepo()
+
+
 def get_payment_request_service() -> PaymentRequestService:
     return PaymentRequestService(
         PaymentRequestsRepo(),
         S3Adapter(),
         get_notification_orchestator(),
         order_repo=OrderRepo(),
+        submissions=PaymentSubmissionRepo(),
+        adjustments=_Lazy(_bank_adjustment_repo),
+        bank_accounts=_Lazy(_bank_account_repo),
+        membership=_Lazy(get_membership_service),
+        accounts=_Lazy(get_account_service),
     )
 
 def get_tournament_invitation_service() -> TournamentInvitationService | None:
