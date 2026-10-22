@@ -72,8 +72,12 @@ def finance_db(monkeypatch):
             table_name = f"test-{construct}"
             _create_table(client, table_name, indexes)
             monkeypatch.setenv(env_var, table_name)
+        # The session module creates its resource at import time, possibly (when other test modules
+        # were collected first) in another region: point it, and anything that cached it, at the fake.
+        resource = boto3.resource("dynamodb", region_name="us-west-2")
+        monkeypatch.setattr("repositories.ddb_session.dynamodb", resource)
         boto3.client("s3", region_name="us-west-2").create_bucket(
             Bucket="jmanage-test-bucket",
             CreateBucketConfiguration={"LocationConstraint": "us-west-2"},
         )
-        yield boto3.resource("dynamodb", region_name="us-west-2")
+        yield resource

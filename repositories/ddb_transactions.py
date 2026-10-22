@@ -6,7 +6,7 @@ native Python types (Decimal, str, list), same as `Table.put_item`.
 """
 from typing import Any
 
-from .ddb_session import dynamodb
+from . import ddb_session
 
 
 class TransactionConflict(Exception):
@@ -48,7 +48,7 @@ def tx_update(table, key: dict[str, Any], update: str, *, condition: str | None 
 
 def transact_write(items: list[dict[str, Any]]) -> None:
     """All-or-nothing write. Raises TransactionConflict when any condition fails."""
-    client = dynamodb.meta.client
+    client = ddb_session.dynamodb.meta.client  # read at call time: tests swap the session
     try:
         client.transact_write_items(TransactItems=items)
     except client.exceptions.TransactionCanceledException as exc:
