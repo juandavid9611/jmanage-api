@@ -63,7 +63,6 @@ def _approved_installment(svc, bank=None):
     review(svc, out["submissionId"], bank=bank)
 
 
-@pytest.mark.xfail(strict=True, reason="F3 fixed in the following commit")
 def test_f3_cannot_delete_a_request_with_approved_payments(finance_db):
     put_bank(None)
     svc = make_service()

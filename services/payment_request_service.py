@@ -265,6 +265,10 @@ class PaymentRequestService:
         return new_item
 
     def delete(self, payment_request_id: str, account_id: str) -> None:
+        raw = self.repo.get(payment_request_id, account_id)
+        if raw and (self._has_approved_submission(payment_request_id, account_id) or _status_of(raw) == "partial"
+                    or raw.get("paid_amount") is not None and _dec(raw["paid_amount"]) > 0):
+            raise _http(409, "This payment request has approved payments (and account adjustments): it cannot be deleted.")
         self.repo.delete(payment_request_id, account_id)
 
     def generate_put_presigned_urls(self, payment_request_id: str, account_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
