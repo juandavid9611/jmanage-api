@@ -119,20 +119,20 @@ class ExpenseRepo:
         now: str,
         user_id: str,
     ) -> dict[str, Any]:
-        """Transaction item: add the payment to the counter, only while approved and not over-paid."""
-        max_paid = expense["total_amount"] - amount
+        """Transaction item: add the payment to the counter, only while approved and `paid_amount` is still the
+        value the caller read (so the status it computed from that read cannot be stale)."""
         return tx_update(
             self._table,
             {"id": expense["id"]},
             "SET paid_amount = paid_amount + :a, bank_account_id = :bank, #st = :new, updated_at = :now, updated_by = :by",
             condition=(
                 "account_id = :tenant AND workspace_id = :ws AND #st = :aprobado "
-                "AND paid_amount <= :max AND total_amount = :total"
+                "AND paid_amount = :seen AND total_amount = :total"
             ),
             names={"#st": "status"},
             values={
                 ":a": amount, ":bank": bank_account_id, ":new": new_status, ":now": now, ":by": user_id,
                 ":tenant": expense["account_id"], ":ws": expense["workspace_id"], ":aprobado": "aprobado",
-                ":max": max_paid, ":total": expense["total_amount"],
+                ":seen": expense["paid_amount"], ":total": expense["total_amount"],
             },
         )

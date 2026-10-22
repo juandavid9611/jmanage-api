@@ -29,7 +29,6 @@ def status_of(call):
 
 
 # --------------------------------------------------------------------------- F1
-@pytest.mark.xfail(strict=True, reason="F1 fixed in the following commit")
 def test_f1_stale_concurrent_expense_payments_never_leave_a_fully_paid_expense_approved(env):
     """Two installments that each read paid=0 (60 + 40 of 100): the second used to be applied on top of the
     first with the status computed from the stale read, leaving paid == total but status 'aprobado'
