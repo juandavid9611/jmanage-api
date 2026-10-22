@@ -56,6 +56,14 @@ from repositories.club_roster_repo_ddb import ClubRosterRepo
 from repositories.club_match_repo_ddb import ClubMatchRepo
 from services.club_tournament_service import ClubTournamentService
 from services.public_club_service import PublicClubService
+from repositories.bank_account_repo_ddb import BankAccountRepo
+from repositories.bank_adjustment_repo_ddb import BankAdjustmentRepo
+from repositories.expense_repo_ddb import ExpenseRepo
+from repositories.expense_payment_repo_ddb import ExpensePaymentRepo
+from repositories.s3_keys import KeyBuilder
+from services.bank_account_service import BankAccountService
+from services.expense_service import ExpenseService
+from utils.env_utils import _env
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -312,3 +320,25 @@ def get_public_club_service() -> PublicClubService:
             s3=S3Adapter(),
         )
     return _public_club_service
+
+
+# ── Finance: bank accounts + expenses ────────────────────────────────────────
+
+def get_bank_account_service() -> BankAccountService:
+    return BankAccountService(BankAccountRepo(), BankAdjustmentRepo(), ExpensePaymentRepo(), get_account_service())
+
+
+def get_expense_service() -> ExpenseService:
+    # Lazy import: the budget repo lives in the budget module (another branch), keep this one importable alone.
+    from repositories.budget_item_repo_ddb import BudgetItemRepo
+
+    return ExpenseService(
+        expenses=ExpenseRepo(),
+        payments=ExpensePaymentRepo(),
+        bank_accounts=BankAccountRepo(),
+        budget_items=BudgetItemRepo(),
+        membership=get_membership_service(),
+        account_svc=get_account_service(),
+        s3=S3Adapter(),
+        keys=KeyBuilder(env=_env()),
+    )
