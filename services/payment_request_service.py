@@ -207,17 +207,43 @@ class PaymentRequestService:
         if new_status == cur_status:
             new_status = None  # the edit form sends the current status back untouched
 
+        # The current admin screen approves or rejects a receipt by editing the request (status paid / back to
+        # pending|overdue|canceled). When a submission is waiting, that edit IS a review decision: run it through
+        # the review logic (one transaction, notifications, order events) and then apply whatever is left.
+        if (
+            cur_status == "approval_pending"
+            and new_status in ("paid", "pending", "overdue", "canceled")
+            and self._has_pending_review(payment_request_id, account_id)
+        ):
+            waiting = next(s for s in self._stored_submissions(payment_request_id, account_id) if s.get("status") == "pending_review")
+            self.review_payment(
+                payment_request_id, account_id, reviewer_id=updated_by, submission_id=waiting["id"],
+                approve=(new_status == "paid"),
+            )
+            raw = self.repo.get(payment_request_id, account_id)
+            existing = self._map_payment_request(dict(raw), get_presigned_url=False)
+            cur_status = _status_of(raw)
+            old_total = _dec(raw.get("user_price"))
+            paid = _paid_of(raw)
+            if new_status == cur_status:
+                new_status = None  # the review already left it exactly as the admin asked
+
+        tracked = bool(raw.get("has_reviewed_payments")) or cur_status == "partial"  # partial only comes from a review
+
         if "user_price" in updates:
             updates["user_price"] = self._money(updates["user_price"], "userPrice", allow_zero=True)
         if "overdue_price" in updates:
             updates["overdue_price"] = self._money(updates["overdue_price"], "overduePrice", allow_zero=True)
         new_total = updates.get("user_price", old_total)
-        if new_total < paid:
+        stays_paid = cur_status == "paid" and (new_status is None or new_status == "paid")
+        if tracked and new_total < paid:
             raise _http(409, f"totalAmount cannot be lower than the amount already paid ({plain_number(paid)}).")
-        if cur_status == "paid" and new_total > paid and (new_status is None or new_status == "paid"):
-            # A paid request must keep paid == total: raising the price would silently leave it 'paid' with a
-            # balance nobody can collect. Revert it first (allowed while no approved payment is tracked).
-            raise _http(409, "Cannot raise the total of a paid request; reopen it first.")
+        if tracked and stays_paid and new_total > paid:
+            # Tracked money (bank account / installments): raising the price would leave it 'paid' with a balance
+            # nobody can collect. Untracked paid requests keep their old behaviour (below).
+            raise _http(409, "Cannot raise the total of a paid request with reviewed payments.")
+        if not tracked and stays_paid and new_total != paid:
+            updates["paid_amount"] = new_total  # 'paid' means paid in full: it follows the corrected price, as before
         if "user_price" in updates and updates["user_price"] != old_total:
             original = raw.get("original_amount")
             if original is None or _dec(original) == old_total:
@@ -240,10 +266,9 @@ class PaymentRequestService:
             if cur_status == "approval_pending" and self._has_pending_review(payment_request_id, account_id):
                 raise _http(409, "A submission is under review: approve or reject it first.")
             if cur_status in ("paid", "partial") and new_status not in ("paid", "partial"):
-                stored_paid = raw.get("paid_amount")  # strongly consistent; the submissions GSI may lag
-                if (stored_paid is not None and _dec(stored_paid) > 0) or self._has_approved_submission(payment_request_id, account_id):
-                    raise _http(409, "This request has approved payments: it cannot leave the paid/partial states.")
-                updates["paid_amount"] = Decimal("0")  # legacy paid row reverted as before
+                if tracked:  # strongly consistent marker set by the review transaction (the submissions GSI may lag)
+                    raise _http(409, "This request has reviewed payments: it cannot leave the paid/partial states.")
+                updates["paid_amount"] = Decimal("0")  # paid by hand or in full without tracking: reverted as before
             if new_status == "paid" and cur_status != "paid":
                 remaining = max(Decimal("0"), new_total - paid)
                 updates["paid_amount"] = new_total
@@ -282,9 +307,10 @@ class PaymentRequestService:
 
     def delete(self, payment_request_id: str, account_id: str) -> None:
         raw = self.repo.get(payment_request_id, account_id)
-        if raw and (self._has_approved_submission(payment_request_id, account_id) or _status_of(raw) == "partial"
-                    or raw.get("paid_amount") is not None and _dec(raw["paid_amount"]) > 0):
-            raise _http(409, "This payment request has approved payments (and account adjustments): it cannot be deleted.")
+        # Tracked money (credited to a bank account or paid in installments) leaves ledger entries that point at
+        # this request: deleting it would orphan them. Plain or manually paid requests stay deletable as before.
+        if raw and (raw.get("has_reviewed_payments") or _status_of(raw) == "partial"):
+            raise _http(409, "This payment request has reviewed payments (and account adjustments): it cannot be deleted.")
         self.repo.delete(payment_request_id, account_id)
 
     def generate_put_presigned_urls(self, payment_request_id: str, account_id: str, files: list[FileSpec]) -> dict[str, dict[str, str]]:
@@ -458,6 +484,10 @@ class PaymentRequestService:
                 new_status = "overdue" if self._was_overdue(raw, status_before) else "partial"
             updates = {"payment_status": new_status, "paid_amount": new_paid}
             target = bank_account_id or sub.get("bank_account_id")
+            if target or raw.get("allow_installments"):
+                # Money that is tracked (credited to a bank account or paid in installments): such a request
+                # cannot be reverted or repriced by hand. A plain full payment stays as editable as before.
+                updates["has_reviewed_payments"] = True
             if target:
                 bank = self._load_bank_account(account_id, target)  # exists / tenant / active / club account
                 require_account_workspace_access(

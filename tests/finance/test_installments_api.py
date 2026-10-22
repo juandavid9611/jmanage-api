@@ -141,3 +141,18 @@ def test_create_copies_installment_settings_and_presign_is_restricted(api):
     assert ok.status_code == 200 and "r1.png" in ok.json()["urls"]
     api.state.update(user="other", ws_role="user", role="user")
     assert api.post(f"/payment_requests/{item['id']}/generate-presigned-urls", params={"workspace_id": WS}, json=files).status_code == 403
+
+
+def test_request_approval_alias_keeps_the_old_400_answers(api):
+    """The current frontend may read these codes: wrong status and no files are plain 400s, as before."""
+    for status in ("paid", "approval_pending", "canceled"):
+        put_pr(f"pr_{status}", status=status, total="100000")
+        r = api.post(f"/payment_requests/pr_{status}/request_approval", params={"workspace_id": WS}, json=["old.png"])
+        assert r.status_code == 400 and "pending or overdue" in r.json()["detail"], status
+    put_pr("pr_ok", total="100000")
+    r = api.post("/payment_requests/pr_ok/request_approval", params={"workspace_id": WS}, json=[])
+    assert r.status_code == 400 and r.json()["detail"] == "No files were uploaded"
+    put_pr("pr_partial", status="partial", total="100000", paid="30000", allow=True, max_installments=3)
+    upload(api.svc, "old.png", pr_id="pr_partial")
+    assert api.post("/payment_requests/pr_partial/request_approval", params={"workspace_id": WS},
+                    json=["old.png"]).status_code == 200

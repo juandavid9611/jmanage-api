@@ -147,11 +147,10 @@ def test_old_frontend_flow_request_approval_then_put_paid(finance_db):
     assert get_pr("pr1")["payment_status"] == "approval_pending"
     body = BulkPutPaymentRequest(status="paid", createDate="x", dueDate="2999-01-01T00:00:00", concept="Mensualidad",
                                  description="d", category="monthly", group=WS, paymentRequestTo=[], userPrice=Decimal("100000"))
-    # old UI sends a full body; the pending submission was created by the alias, so the admin must review it
-    assert status_of(lambda: svc.update("pr1", ACC, body, updated_by=ADMIN)) == 409
-    sub = svc.get_detail("pr1", ACC, viewer_is_admin=True)["submissions"][0]
-    review(svc, sub["id"])
-    assert get_pr("pr1")["payment_status"] == "paid"
+    # the old admin screen approves by editing the request: it must still work, and it approves the waiting submission
+    svc.update("pr1", ACC, body, updated_by=ADMIN)
+    assert get_pr("pr1")["payment_status"] == "paid" and get_pr("pr1")["paid_amount"] == Decimal("100000")
+    assert [s["status"] for s in svc.get_detail("pr1", ACC, viewer_is_admin=True)["submissions"]] == ["approved"]
 
 
 # --------------------------------------------------------------------------- F5

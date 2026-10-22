@@ -216,32 +216,74 @@ def test_put_manual_paid_after_abonos_records_only_the_remaining_amount(finance_
     assert get_pr()["paid_amount"] == Decimal("100000")
 
 
-def test_put_regress_is_blocked_with_approved_submissions_but_allowed_for_legacy_paid(finance_db):
-    put_pr("tracked", total="100000", created_time=1)
+def test_put_regress_is_blocked_only_for_tracked_money(finance_db):
+    # tracked = paid in installments (or credited to a bank account): reverting would desync the ledger
+    put_pr("tracked", total="100000", allow=True, max_installments=3, created_time=1)
     svc = make_service()
-    sub = submit(svc, pr_id="tracked")
+    sub = submit(svc, pr_id="tracked", amount="100000")
     review(svc, sub["submissionId"], pr_id="tracked")
-    assert get_pr("tracked")["payment_status"] == "paid"
+    assert get_pr("tracked")["payment_status"] == "paid" and get_pr("tracked")["has_reviewed_payments"] is True
     for target in ("pending", "overdue", "canceled"):
         with pytest.raises(HTTPException) as e:
             svc.update("tracked", ACC, body(status=target))
         assert code(e) == 409
     assert get_pr("tracked")["payment_status"] == "paid" and get_pr("tracked")["paid_amount"] == Decimal("100000")
 
-    put_pr("legacy_paid", status="paid", total="100000", created_time=2)  # no submissions: regress as before
+    # a plain full payment (no installments, no bank account) is as revertible as it always was
+    put_pr("plain", total="100000", created_time=3)
+    plain = submit(svc, pr_id="plain")
+    review(svc, plain["submissionId"], pr_id="plain")
+    assert get_pr("plain")["payment_status"] == "paid" and "has_reviewed_payments" not in get_pr("plain")
+    svc.update("plain", ACC, body(status="pending"))
+    assert get_pr("plain")["payment_status"] == "pending" and get_pr("plain")["paid_amount"] == 0
+
+    put_pr("legacy_paid", status="paid", total="100000", created_time=2)  # no submissions at all
     svc.update("legacy_paid", ACC, body(status="pending"))
     assert get_pr("legacy_paid")["payment_status"] == "pending" and get_pr("legacy_paid")["paid_amount"] == 0
 
 
-def test_put_cannot_leave_approval_pending_while_a_submission_is_under_review(finance_db):
-    put_pr(total="100000")
+def test_admin_edit_while_a_submission_is_waiting_is_a_review_decision(finance_db):
+    """The current admin screen approves/rejects a receipt by editing the request: that must keep working."""
     svc = make_service()
-    submit(svc)
-    for target in ("pending", "paid"):
-        with pytest.raises(HTTPException) as e:
-            svc.update("pr1", ACC, body(status=target))
-        assert code(e) == 409
-    assert get_pr()["payment_status"] == "approval_pending"
+    put_pr("approve", total="100000")
+    submit(svc, pr_id="approve")
+    svc.update("approve", ACC, body(status="paid"), updated_by=ADMIN)
+    assert get_pr("approve")["payment_status"] == "paid" and get_pr("approve")["paid_amount"] == Decimal("100000")
+    assert [x["status"] for x in svc.submissions.list_by_payment_request("approve", ACC)] == ["approved"]
+
+    put_pr("reject", status="overdue", total="100000", created_time=2)
+    submit(svc, pr_id="reject")
+    assert get_pr("reject")["payment_status"] == "approval_pending"
+    svc.update("reject", ACC, body(status="overdue"), updated_by=ADMIN)
+    assert get_pr("reject")["payment_status"] == "overdue" and get_pr("reject").get("paid_amount", 0) == 0  # untouched rows store nothing
+    assert [x["status"] for x in svc.submissions.list_by_payment_request("reject", ACC)] == ["rejected"]
+
+    put_pr("cancel", total="100000", created_time=3)
+    submit(svc, pr_id="cancel")
+    svc.update("cancel", ACC, body(status="canceled"), updated_by=ADMIN)
+    assert get_pr("cancel")["payment_status"] == "canceled"
+    assert [x["status"] for x in svc.submissions.list_by_payment_request("cancel", ACC)] == ["rejected"]
+
+    put_pr("hand", total="100000", created_time=4)
+    submit(svc, pr_id="hand")
+    with pytest.raises(HTTPException) as e:  # 'partial' is calculated, never settable by hand
+        svc.update("hand", ACC, body(status="partial"), updated_by=ADMIN)
+    assert code(e) == 422
+    svc.update("hand", ACC, body(status="approval_pending"), updated_by=ADMIN)  # the form echoing the current status
+    assert get_pr("hand")["payment_status"] == "approval_pending"
+    assert [x["status"] for x in svc.submissions.list_by_payment_request("hand", ACC)] == ["pending_review"]
+
+
+def test_admin_marks_paid_a_request_with_a_partial_submission_waiting(finance_db):
+    put_pr(total="100000", allow=True, max_installments=3)
+    svc = make_service()
+    submit(svc, amount="30000")
+    svc.update("pr1", ACC, body(status="paid"), updated_by=ADMIN)  # approve the 30k, then close the rest by hand
+    raw = get_pr()
+    assert raw["payment_status"] == "paid" and raw["paid_amount"] == Decimal("100000")
+    subs = svc.submissions.list_by_payment_request("pr1", ACC)
+    assert sorted((x["source"], x["status"], x["amount"]) for x in subs) == [
+        ("manual", "approved", Decimal("70000")), ("player", "approved", Decimal("30000"))]
 
 
 def test_put_installment_settings(finance_db):

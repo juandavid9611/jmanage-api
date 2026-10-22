@@ -209,6 +209,11 @@ async def request_payment_request_approval(
             status_code=400,
             detail=f"Payment request does not belong to workspace {workspace_id}"
         )
+    # Same answers (and codes) the old endpoint gave: the current frontend may read them. `partial` is new.
+    if payment_request["status"] not in ("pending", "overdue", "partial"):
+        raise HTTPException(status_code=400, detail=f"Payment Request {payment_request_id} is not in pending or overdue status")
+    if not file_names:
+        raise HTTPException(status_code=400, detail="No files were uploaded")
 
     return {
         "requested_payment_request_approval_id": svc.request_payment_request_approval(
