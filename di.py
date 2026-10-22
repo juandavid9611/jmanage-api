@@ -41,6 +41,9 @@ from services.tournament_match_notification_service import TournamentMatchNotifi
 from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
 from repositories.votation_repo_ddb import VotationRepo
+from repositories.budget_item_repo_ddb import BudgetItemRepo
+from repositories.budget_quantity_repo_ddb import BudgetQuantityRepo
+from services.budget_service import BudgetService
 from services.votation_service import VotationService
 from services.tournament_invitation_service import TournamentInvitationService
 from repositories.tournament_invitation_repo_ddb import TournamentInvitationRepo
@@ -256,6 +259,10 @@ def get_standings_service() -> StandingsService:
     match_repo = TournamentMatchRepo()
     team_repo = TournamentTeamRepo()
     return StandingsService(match_repo, team_repo=team_repo)
+
+def get_budget_service() -> BudgetService:
+    return BudgetService(BudgetItemRepo(), BudgetQuantityRepo())
+
 
 def get_votation_service() -> VotationService:
     repo = VotationRepo()

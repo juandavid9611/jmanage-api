@@ -22,6 +22,7 @@ from api.notifications import router as notifications_router
 from api.public_tournaments import router as public_tournaments_router
 from api.public_clubs import router as public_clubs_router
 from api.votations import router as votations_router
+from api.budget import router as budget_router
 from api.invitations import router as invitations_router
 from api.public_invitations import router as public_invitations_router
 from api.admin_invitations import router as admin_invitations_router
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(public_tournaments_router)
     app.include_router(public_clubs_router)
     app.include_router(votations_router)
+    app.include_router(budget_router)
     app.include_router(invitations_router)
     app.include_router(public_invitations_router)
     app.include_router(admin_invitations_router)
