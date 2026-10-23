@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class PaymentRequestStatus(str, Enum):
@@ -28,6 +28,9 @@ class BulkPutPaymentRequest(BaseModel):
     reference: str | None = None
     allowInstallments: bool | None = None
     maxInstallments: int | None = None
+    # Bank account the money of this edit goes to when the admin marks the request paid (the invoice form
+    # sends it as `account_id`; the contract name is camelCase). Ignored unless the status becomes paid.
+    accountId: str | None = Field(default=None, validation_alias=AliasChoices("accountId", "account_id"))
 
 
 class SubmitPaymentRequest(BaseModel):

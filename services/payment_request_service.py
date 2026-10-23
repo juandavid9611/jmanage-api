@@ -143,6 +143,9 @@ class PaymentRequestService:
             return None  # same rule as the list (non-admins only see their own); 404, never confirm it exists
         item = self._map_payment_request(raw)
         item["submissions"] = [self._map_submission(s) for s in all_subs] if (is_admin or is_payee) else []
+        banked = [s for s in stored if s.get("status") == "approved" and s.get("bank_account_id")]
+        item["accountId"] = (max(banked, key=lambda s: (s.get("reviewed_at") or "", s["id"]))["bank_account_id"]
+                             if banked and is_admin else None)
         return item
 
     def list_payment_requests(self, account_id: str, *, user_id: str | None = None, group: str | None = None) -> list[dict[str, Any]]:
@@ -219,6 +222,7 @@ class PaymentRequestService:
             self.review_payment(
                 payment_request_id, account_id, reviewer_id=updated_by, submission_id=waiting["id"],
                 approve=(new_status == "paid"),
+                bank_account_id=(item.accountId if new_status == "paid" else None),
             )
             raw = self.repo.get(payment_request_id, account_id)
             existing = self._map_payment_request(dict(raw), get_presigned_url=False)
@@ -273,7 +277,20 @@ class PaymentRequestService:
                 remaining = max(Decimal("0"), new_total - paid)
                 updates["paid_amount"] = new_total
                 if remaining > 0 and self.submissions is not None:
-                    extra_items.append(self.submissions.tx_create(self._manual_submission(raw, remaining, updated_by)))
+                    manual = self._manual_submission(raw, remaining, updated_by)
+                    extra_items.append(self.submissions.tx_create(manual))
+                    if item.accountId:
+                        # The invoice form lets the admin pick the account when marking paid: credit it exactly like
+                        # an approved payment (same checks, deterministic adjustment id, same transaction).
+                        bank = self._load_bank_account(account_id, item.accountId)
+                        require_account_workspace_access(
+                            self.membership, user_id=updated_by, account_id=account_id,
+                            request_workspace_id=raw.get("user_group"), bank_account=bank,
+                        )
+                        manual["bank_account_id"] = bank["id"]
+                        extra_items.append(self.adjustments.tx_create(
+                            self._adjustment_item(raw, manual, bank, remaining, updated_by, manual["reviewed_at"])))
+                        updates["has_reviewed_payments"] = True  # credited to a bank account: tracked from now on
                 remove.append("status_before_review")
             updates["payment_status"] = new_status
         elif cur_status in ("pending", "overdue", "partial") and paid > 0 and new_total <= paid:

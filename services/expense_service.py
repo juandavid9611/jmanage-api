@@ -15,8 +15,10 @@ import uuid
 from datetime import date, timedelta, timezone, datetime
 from decimal import Decimal
 from typing import Any
+from urllib.parse import unquote, urlparse
 
-from api.schemas.finance_constants import EXPENSE_CATEGORIES, EXPENSE_STATUSES, EXPENSE_TEAMS, ID_PREFIXES
+from api.schemas.finance_constants import (EXPENSE_CATEGORIES, EXPENSE_STATUSES, EXPENSE_TEAMS, ID_PREFIXES,
+                                           MAX_FILE_NAME)
 from core.finance_money import new_id, plain_number, valid_file_name, valid_idempotency_key
 from repositories.bank_account_repo_ddb import ConditionFailed
 from repositories.ddb_transactions import TransactionConflict, transact_write
@@ -57,6 +59,7 @@ class ExpenseService:
         out = _plain(item, "total_amount", "paid_amount", "budget_quantity")
         out.pop("account_id", None)  # tenant
         out["account_id"] = out.pop("bank_account_id", None)
+        out.pop("proof_keys", None)  # raw keys never leave the API; the detail returns short-lived URLs
         out.setdefault("proof_images", [])
         return out
 
@@ -84,10 +87,32 @@ class ExpenseService:
         )
         out = self._wire(item)
         out["payments"] = [self._wire_payment(p) for p in payments]
-        out["proof_images"] = self._proof_urls(payments)
+        own = [{"file_keys": item.get("proof_keys") or []}]
+        out["proof_images"] = self._proof_urls(own + payments)
         return out
 
     # ------------------------------------------------------------------ helpers
+    def _proof_keys(self, expense_id: str, account_id: str, entries: list[str] | None) -> list[str]:
+        """Object keys of the expense's own attachments from what a form sends: bare file names (just uploaded
+        through generate-presigned-urls) or this API's own URLs (what the detail returned on the previous load).
+        Anything pointing outside this expense's prefix is dropped, never trusted."""
+        prefix = self.keys.expense_file(account_id, expense_id, "x", "y").rsplit("/", 2)[0] + "/"
+        keys: list[str] = []
+        for entry in entries or []:
+            if not isinstance(entry, str):
+                continue
+            if entry.startswith(("http://", "https://")):
+                key = unquote(urlparse(entry).path).lstrip("/")
+                if key.startswith(prefix) and ".." not in key and key not in keys:
+                    keys.append(key)
+                continue
+            if not valid_file_name(entry, max_len=MAX_FILE_NAME):
+                raise FinanceError(422, f"Invalid file name: {entry[:40]!r}")
+            key = self.keys.expense_file(account_id, expense_id, "uploads", entry)
+            if key not in keys:
+                keys.append(key)
+        return keys
+
     def _get_or_404(self, expense_id: str, workspace_id: str, account_id: str) -> dict[str, Any]:
         item = self.expenses.get(expense_id, account_id)
         if not item or item.get("workspace_id") != workspace_id:
@@ -162,12 +187,14 @@ class ExpenseService:
             "budget_quantity": body.budget_quantity,
             "requested_by": user_id,
             "source": "api",
+            "proof_keys": [],
             "created_at": now,
             "updated_at": now,
             "updated_by": user_id,
         }
         if not item["detail"]:
             raise FinanceError(422, "detail cannot be blank")
+        item["proof_keys"] = self._proof_keys(item["id"], account_id, body.proof_images)
         self.expenses.create(item)
         return self._detail(item, account_id)
 
@@ -208,6 +235,10 @@ class ExpenseService:
 
         changed = {k: v for k, v in new.items() if current.get(k) != v}
         sets = dict(changed)
+        if "proof_images" in fields and body.proof_images is not None:
+            keys = self._proof_keys(expense_id, account_id, body.proof_images)
+            if keys != list(current.get("proof_keys") or []):
+                sets["proof_keys"] = keys  # attachments never need a new approval
         removes: tuple[str, ...] = ()
         if current["status"] == "aprobado" and any(k in changed for k in _REAPPROVAL_FIELDS):
             # an approved expense cannot be silently rewritten: it needs approval again

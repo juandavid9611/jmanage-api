@@ -20,6 +20,8 @@ class CreateExpense(BaseModel):
     total_amount: Money
     budget_item_id: str | None = None
     budget_quantity: StrictInt | None = None
+    # Attachments of the expense itself (quote, invoice): bare file names from /generate-presigned-urls.
+    proof_images: list[str] = Field(default_factory=list, max_length=10)
 
 
 class UpdateExpense(BaseModel):
@@ -34,6 +36,8 @@ class UpdateExpense(BaseModel):
     total_amount: Money | None = None
     budget_item_id: str | None = None
     budget_quantity: StrictInt | None = None
+    # The edit form sends back what the detail returned (our own URLs) plus new file names.
+    proof_images: list[str] | None = Field(default=None, max_length=10)
 
 
 class RejectExpense(BaseModel):
