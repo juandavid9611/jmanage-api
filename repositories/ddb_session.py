@@ -95,3 +95,33 @@ def club_roster_table():
 
 def club_match_table():
     return dynamodb.Table(os.getenv("CLUB_MATCH_TABLE_NAME"))
+
+
+# ── Finance module (bank accounts, expenses, budget, payment submissions) ─────
+
+def bank_account_table():
+    return dynamodb.Table(os.getenv("BANK_ACCOUNT_TABLE_NAME"))
+
+
+def bank_adjustment_table():
+    return dynamodb.Table(os.getenv("BANK_ADJUSTMENT_TABLE_NAME"))
+
+
+def expense_table():
+    return dynamodb.Table(os.getenv("EXPENSE_TABLE_NAME"))
+
+
+def expense_payment_table():
+    return dynamodb.Table(os.getenv("EXPENSE_PAYMENT_TABLE_NAME"))
+
+
+def budget_item_table():
+    return dynamodb.Table(os.getenv("BUDGET_ITEM_TABLE_NAME"))
+
+
+def budget_quantity_table():
+    return dynamodb.Table(os.getenv("BUDGET_QUANTITY_TABLE_NAME"))
+
+
+def payment_submission_table():
+    return dynamodb.Table(os.getenv("PAYMENT_SUBMISSION_TABLE_NAME"))

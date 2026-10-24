@@ -1,6 +1,7 @@
 import os
 from urllib.parse import quote, unquote, urlparse
 import boto3
+from botocore.exceptions import ClientError
 from repositories.s3_keys import KeyBuilder
 from utils.env_utils import _env
 
@@ -195,6 +196,16 @@ class S3Adapter:
     ) -> dict[str, str]:
         key = self._kb.player_avatar(account_id, player_id, filename)
         return self._presign_put(key=key, content_type=content_type, expires_in=expires_in)
+
+    def object_exists(self, key: str) -> bool | None:
+        """True/False when S3 says so; None when it cannot tell (e.g. no permission to distinguish)."""
+        try:
+            self._s3.head_object(Bucket=_bucket_name(), Key=key)
+            return True
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+                return False
+            return None
 
     def delete_file(self, key: str) -> None:
         """Delete a file from S3"""

@@ -37,6 +37,13 @@ class KeyBuilder:
         """
         return join(self.user_root(account_id, user_id), "invoices", _clean(payment_request_id), _clean(filename))
     
+    def expense_file(self, account_id: str, expense_id: str, payment_segment: str, filename: str) -> str:
+        """
+        Full object key for an expense payment proof.
+        {env}/accounts/{account_id}/expenses/{expense_id}/{payment_id}/{filename}
+        """
+        return join(self.account_root(account_id), "expenses", _clean(expense_id), _clean(payment_segment), _clean(filename))
+
     def tour_image(self, account_id: str, tour_id: str, filename: str) -> str:
         """
         Full object key under the tour images prefix, including filename.
