@@ -532,7 +532,8 @@ class Notifications:
                 "pending": "Pendiente",
                 "overdue": "Vencido",
                 "canceled": "Cancelado",
-                "approval_pending": "Pendiente de aprobación"
+                "approval_pending": "Pendiente de aprobación",
+                "partial": "Pago parcial"
             }
             return {"name": "Estado", "old_value": english_to_spanish_status[field["old_value"]], "new_value": english_to_spanish_status[field["new_value"]]}
         

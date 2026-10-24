@@ -1,6 +1,6 @@
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class PaymentRequestStatus(str, Enum):
@@ -9,6 +9,7 @@ class PaymentRequestStatus(str, Enum):
     OVERDUE = "overdue"
     CANCELED = "canceled"
     APPROVAL_PENDING = "approval_pending"
+    PARTIAL = "partial"
 
 class BulkPutPaymentRequest(BaseModel):
     id: str | None = None
@@ -25,3 +26,22 @@ class BulkPutPaymentRequest(BaseModel):
     overduePrice: Decimal | None = None
     orderId: str | None = None
     reference: str | None = None
+    allowInstallments: bool | None = None
+    maxInstallments: int | None = None
+    # Bank account the money of this edit goes to when the admin marks the request paid (the invoice form
+    # sends it as `account_id`; the contract name is camelCase). Ignored unless the status becomes paid.
+    accountId: str | None = Field(default=None, validation_alias=AliasChoices("accountId", "account_id"))
+
+
+class SubmitPaymentRequest(BaseModel):
+    """Body of POST /payment_requests/{id}/submit_payment (camelCase like the rest of the payment fields)."""
+    amount: Decimal | None = None  # ignored (forced to the full balance) when the request has no installments
+    fileNames: list[str]
+    accountId: str | None = None
+
+
+class ReviewPaymentRequest(BaseModel):
+    """Body of POST /payment_requests/{id}/review_payment."""
+    submissionId: str
+    approve: bool
+    accountId: str | None = None

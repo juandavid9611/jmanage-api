@@ -12,6 +12,7 @@ from repositories.calendar_repo_ddb import CalendarRepo
 from services.notification_orchestator import Notifications
 from services.payment_request_service import PaymentRequestService
 from repositories.payment_requests_repo_ddb import PaymentRequestsRepo
+from repositories.payment_submission_repo_ddb import PaymentSubmissionRepo
 from repositories.notifications.onesignal_impl import OneSignalNotificationSender
 from repositories.notifications.courier_email_impl import CourierNotificationSender
 from repositories.notification_repo_ddb import NotificationRepo
@@ -41,6 +42,9 @@ from services.tournament_match_notification_service import TournamentMatchNotifi
 from services.standings_service import StandingsService
 from services.tournament_stats_service import TournamentStatsService
 from repositories.votation_repo_ddb import VotationRepo
+from repositories.budget_item_repo_ddb import BudgetItemRepo
+from repositories.budget_quantity_repo_ddb import BudgetQuantityRepo
+from services.budget_service import BudgetService
 from services.votation_service import VotationService
 from services.tournament_invitation_service import TournamentInvitationService
 from repositories.tournament_invitation_repo_ddb import TournamentInvitationRepo
@@ -53,6 +57,14 @@ from repositories.club_roster_repo_ddb import ClubRosterRepo
 from repositories.club_match_repo_ddb import ClubMatchRepo
 from services.club_tournament_service import ClubTournamentService
 from services.public_club_service import PublicClubService
+from repositories.bank_account_repo_ddb import BankAccountRepo
+from repositories.bank_adjustment_repo_ddb import BankAdjustmentRepo
+from repositories.expense_repo_ddb import ExpenseRepo
+from repositories.expense_payment_repo_ddb import ExpensePaymentRepo
+from repositories.s3_keys import KeyBuilder
+from services.bank_account_service import BankAccountService
+from services.expense_service import ExpenseService
+from utils.env_utils import _env
 
 
 def get_notification_repo() -> NotificationRepo:
@@ -79,12 +91,41 @@ def get_cognito_wrapper() -> CognitoIdentityProviderWrapper:
         boto3.client("cognito-idp"), os.environ.get("USER_POOL_ID"), os.environ.get("USER_POOL_API_CLIENT_ID")
     )
 
+class _Lazy:
+    """Builds the wrapped collaborator on first use, so a lambda that never reaches the money flows
+    (e.g. the overdue scheduler) does not need their tables/env vars nor their modules at import time."""
+
+    def __init__(self, factory):
+        self._factory = factory
+        self._obj = None
+
+    def __getattr__(self, name):
+        if self._obj is None:
+            self._obj = self._factory()
+        return getattr(self._obj, name)
+
+
+def _bank_account_repo():
+    from repositories.bank_account_repo_ddb import BankAccountRepo
+    return BankAccountRepo()
+
+
+def _bank_adjustment_repo():
+    from repositories.bank_adjustment_repo_ddb import BankAdjustmentRepo
+    return BankAdjustmentRepo()
+
+
 def get_payment_request_service() -> PaymentRequestService:
     return PaymentRequestService(
         PaymentRequestsRepo(),
         S3Adapter(),
         get_notification_orchestator(),
-        order_repo=OrderRepo(),
+        order_repo=_Lazy(OrderRepo),
+        submissions=PaymentSubmissionRepo(),
+        adjustments=_Lazy(_bank_adjustment_repo),
+        bank_accounts=_Lazy(_bank_account_repo),
+        membership=_Lazy(get_membership_service),
+        accounts=_Lazy(get_account_service),
     )
 
 def get_tournament_invitation_service() -> TournamentInvitationService | None:
@@ -257,6 +298,10 @@ def get_standings_service() -> StandingsService:
     team_repo = TournamentTeamRepo()
     return StandingsService(match_repo, team_repo=team_repo)
 
+def get_budget_service() -> BudgetService:
+    return BudgetService(BudgetItemRepo(), BudgetQuantityRepo())
+
+
 def get_votation_service() -> VotationService:
     repo = VotationRepo()
     tour_repo = TourRepo()
@@ -305,3 +350,22 @@ def get_public_club_service() -> PublicClubService:
             s3=S3Adapter(),
         )
     return _public_club_service
+
+
+# ── Finance: bank accounts + expenses ────────────────────────────────────────
+
+def get_bank_account_service() -> BankAccountService:
+    return BankAccountService(BankAccountRepo(), BankAdjustmentRepo(), ExpensePaymentRepo(), get_account_service())
+
+
+def get_expense_service() -> ExpenseService:
+    return ExpenseService(
+        expenses=ExpenseRepo(),
+        payments=ExpensePaymentRepo(),
+        bank_accounts=BankAccountRepo(),
+        budget_items=BudgetItemRepo(),
+        membership=get_membership_service(),
+        account_svc=get_account_service(),
+        s3=S3Adapter(),
+        keys=KeyBuilder(env=_env()),
+    )
