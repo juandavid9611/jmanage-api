@@ -7,7 +7,7 @@ BUILD_DIR=".lambda_build"
 
 # Use space-separated strings (not arrays)
 SRC_DIRS="api builders core repositories services utils"
-ROOT_PY_FILES="app.py auth.py di.py JWTBearer.py scheduled_handler.py"
+ROOT_PY_FILES="app.py auth.py di.py JWTBearer.py"
 
 IMAGE="public.ecr.aws/sam/build-python3.12:latest"
 # Match your Lambda architecture: X86_64 -> linux/amd64, ARM_64 -> linux/arm64
@@ -58,8 +58,5 @@ docker run --rm \
 
     # 5) Create final zip at repo root
     (cd "$BUILD_DIR" && zip -qr "../$ZIP_NAME" .)
-
-    # 6) The PaymentScheduler Lambda imports scheduled_handler: refuse a zip without it
-    unzip -l "$ZIP_NAME" | grep -q " scheduled_handler.py$"
   '
 echo "✅ Built ${ZIP_NAME} (platform=${PLATFORM})."

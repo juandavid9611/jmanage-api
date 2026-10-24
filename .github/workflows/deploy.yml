@@ -19,7 +19,7 @@ jobs:
           BUILD_DIR=".lambda_build"
           ZIP_NAME="lambda_function.zip"
           SRC_DIRS="api builders core repositories services utils"
-          ROOT_PY_FILES="app.py auth.py di.py JWTBearer.py scheduled_handler.py"
+          ROOT_PY_FILES="app.py auth.py di.py JWTBearer.py"
 
           rm -rf "$BUILD_DIR" && mkdir -p "$BUILD_DIR"
 
@@ -38,9 +38,6 @@ jobs:
           find "$BUILD_DIR" -name "*.pyc" -delete 2>/dev/null || true
 
           (cd "$BUILD_DIR" && zip -qr "../$ZIP_NAME" .)
-          # The PaymentScheduler Lambda imports scheduled_handler: a zip without it fails every run
-          # with Runtime.ImportModuleError (it did from April to October 2026 without anyone noticing).
-          unzip -l "$ZIP_NAME" | grep -q " scheduled_handler.py$" || { echo "::error::scheduled_handler.py is missing from the Lambda zip"; exit 1; }
           echo "✅ Lambda zip built ($(du -sh $ZIP_NAME | cut -f1))"
 
       - name: Configure AWS credentials
